@@ -29,3 +29,8 @@ Accounts, cloudsync, gezamenlijk bewerken en een Sharon-koppeling zijn nog niet 
 Met de volledige bron: `BS_SOURCE=/pad/overzicht-BS.csv node --test core.test.mjs`.
 
 Lokaal starten: `python3 -m http.server 8000`, open http://localhost:8000.
+
+## Dagelijks gebruik (2026-11-13)
+Vandaag toont de actieve lijst, favorieten/gekochte producten en herbruikbare gerechten en activiteiten. Activiteiten delen dezelfde product-ID's; ze kunnen worden gemaakt, bewerkt of uit een lijst opgeslagen. Standaardvoorbeelden worden eenmaal toegevoegd. Er wordt geen voorraad afgeleid uit aankopen. Lijsten, favorieten, aankoopindicaties, activiteiten en verpakkingskoppelingen blijven lokaal en zitten in de JSON-back-up.
+
+Barcodeherkenning vraagt bij onbekende codes Open Food Facts API v3 op, met timeout, sessiecache en maximaal tien opvragingen per minuut. Alleen een barcode wordt verstuurd; camerabeelden en lijsten blijven lokaal. De gebruiker controleert een voorstel en kiest een bestaand generiek product of maakt een nieuw product. Merken/verpakkingen blijven afzonderlijke metadata bij dat product. Bronverwijzingen en ODbL-attributie staan bij de scanner en gekoppelde verpakkingen. Onbekende codes, netwerkproblemen en ontbrekende productgegevens ondersteunen handmatige invoer. Voor gebruik op grotere schaal: registreer het app-gebruik bij Open Food Facts; browserrequests kunnen geen eigen User-Agent afdwingen. GS1, accounts, gedeelde live-lijsten en een actieve koppeling met Sharon zijn niet aangesloten.

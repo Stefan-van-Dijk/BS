@@ -15,3 +15,10 @@ test('Category cycles are removed while shared children and products remain',asy
  assert.deepEqual(categories[2].entries,[{type:'product',id:'p'}]);
  assert.equal(removeCategoryCycles(categories),0);
 });
+
+test('Backups preserve favorites, package links and reusable activities',()=>{
+ const data={schemaVersion:1,categories:[{id:'c',name:'Zuivel',entries:[{type:'product',id:'p'}]}],products:[{id:'p',name:'Melk',categoryId:'c',barcodes:['12345678'],favorite:true,purchaseCount:2,packages:[{barcode:'12345678',name:'Merk melk',quantity:'1 l',source:'https://world.openfoodfacts.org/product/12345678'}]}],recipes:[{id:'r',kind:'activity',name:'Weekend weg',categoryId:'c',ingredients:[{productId:'p',quantity:2,note:'Voor ontbijt'}]}],lists:[{id:'l',name:'Deze week',items:[]}]};
+ const restored=validate(JSON.parse(JSON.stringify(data)));
+ assert.equal(restored.products[0].favorite,true);assert.equal(restored.products[0].packages[0].quantity,'1 l');assert.equal(restored.recipes[0].kind,'activity');
+ addItem(restored.lists[0],restored.recipes[0].ingredients[0].productId,2,'Voor ontbijt');assert.equal(restored.lists[0].items[0].productId,'p');assert.equal(restored.recipes[0].ingredients[0].quantity,2);
+});

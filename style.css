@@ -8,3 +8,5 @@ header{padding:12px 24px}.brand span{font-size:26px}main{padding-top:6px}nav{pos
 #scan{display:inline-flex;align-items:center;gap:7px}.productLine,.row .text{-webkit-touch-callout:none;user-select:none}
 
 .categoryBranch>summary{cursor:pointer;padding:14px 8px;border-bottom:1px solid #ededf0;font-size:15px}.treeChildren{margin-left:14px;padding-left:8px;border-left:1px solid #ededf0}.productLine,.row{touch-action:pan-y}.categoryBranch{min-width:0}
+
+#home h1{font-size:24px;font-weight:400}#home h2{font-size:18px;font-weight:500}#home .toolbar{justify-content:space-between}#home .categoryBranch{margin-top:12px}#home .hint{padding:8px}nav{overflow-x:auto}nav button{white-space:nowrap}#homeContent>.toolbar:first-child{justify-content:flex-start}label:has(#onlyNeeded){display:flex;align-items:center;gap:8px}
