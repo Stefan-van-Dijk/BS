@@ -20,11 +20,12 @@ jobs:
           node-version: '24'
       - run: node --check app.mjs
       - run: node --check core.mjs
-      - run: node --test core.test.mjs
+      - run: node --test core.test.mjs catalog.test.mjs
       - name: Package public application only
         run: |
           mkdir -p public
           cp index.html style.css app.mjs core.mjs public/
+          cp -r data public/data
           touch public/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

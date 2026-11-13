@@ -4,11 +4,11 @@ Zelfstandige Nederlandse webapp zonder dependencies of build. Producten en gerec
 
 ## Publiceren op GitHub Pages
 
-Settings → Pages → Deploy from a branch → main → /(root) → Save. De verwachte URL na publicatie is https://stefan-van-dijk.github.io/BS/.
+Settings → Pages → Source: GitHub Actions. De verwachte URL na publicatie is https://stefan-van-dijk.github.io/BS/.
 
 ## Starten en gegevens
 
-Importeer het volledige `overzicht-BS.csv`. De kopregel bevat categorienamen; puntkomma's scheiden de kolommen. De losse BS-bestanden en uitsneden worden niet samengevoegd. Persoonlijke gegevens worden niet gepubliceerd in deze openbare repository: import vindt in de browser plaats, opslag in localStorage. Er zijn geen externe scripts of analytics. Maak regelmatig een JSON-back-up; wissen van browsergegevens, privémodus of een ander domein/browserprofiel kan lokale data onbereikbaar maken. JSON-herstel vervangt na validatie en bevestiging de volledige staat. CSV-import vervangt de catalogus en is alleen toegestaan bij lege lijsten.
+De standaardcatalogus wordt automatisch geladen. Aanvullend kun je het volledige `overzicht-BS.csv` importeren. De kopregel bevat categorienamen; puntkomma's scheiden de kolommen. De meegeleverde catalogus combineert alle 22 aangeleverde bestanden. Het hoofdoverzicht is leidend; ontbrekende productteksten en afwijkende gerechtvarianten worden toegevoegd. De bronbestandsnamen staan per record vermeld. De aangeleverde standaardcatalogus staat op verzoek openbaar in data/catalog.json en wordt automatisch geladen. Eigen lijsten en wijzigingen blijven in localStorage. Er zijn geen externe scripts of analytics. Maak regelmatig een JSON-back-up; wissen van browsergegevens, privémodus of een ander domein/browserprofiel kan lokale data onbereikbaar maken. JSON-herstel vervangt na validatie en bevestiging de volledige staat. CSV-import vervangt de catalogus en is alleen toegestaan bij lege lijsten.
 
 Notatie: `(c)` verwijst naar een submenu; `(a)` naar een gerecht waarvan komma's de ingrediënten scheiden. `(x)` en `(y)` zijn voorlopig geïnterpreteerd als aantal en vrije tekst; beide velden zijn voor ieder product beschikbaar. `..`, `…` en `<` worden overgeslagen. De oorspronkelijke Shortcut is nog niet gecontroleerd.
 
@@ -24,7 +24,7 @@ Accounts, cloudsync, gezamenlijk bewerken en een Sharon-koppeling zijn nog niet 
 
 ## Ontwikkelen
 
-`node --test core.test.mjs`
+`node --test core.test.mjs catalog.test.mjs`
 
 Met de volledige bron: `BS_SOURCE=/pad/overzicht-BS.csv node --test core.test.mjs`.
 
