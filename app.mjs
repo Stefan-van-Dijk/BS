@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs?v=20261113-pills1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs?v=20261113-scanner2';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='shop',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -92,23 +92,40 @@ function inputPills(value){
  for(const [key,label,hint] of choices){const l=el('label'),radio=el('input');radio.type='radio';radio.name='productInput';radio.value=key;radio.checked=key===value;radio.setAttribute('aria-describedby','inputModeHelp');radio.onchange=()=>{result.value=key;help.textContent=hint;};l.append(radio,el('span',label));group.append(l);if(radio.checked)help.textContent=hint;}
  $('#modalBody').append(group,help);return result;
 }
+let barcodeLibrary;
+function loadBarcodeReader(){
+ if(window.ZXingBrowser)return Promise.resolve(window.ZXingBrowser);
+ if(!barcodeLibrary)barcodeLibrary=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='./vendor/zxing-browser-0.1.5.min.js';
+  script.onload=()=>window.ZXingBrowser?resolve(window.ZXingBrowser):reject(Error('Scanner niet geladen'));
+  script.onerror=()=>{script.remove();barcodeLibrary=null;reject(Error('Scanner niet geladen'));};document.head.append(script);
+ });return barcodeLibrary;
+}
 function cameraControl(container,onCode){
  const area=el('div',undefined,'scanner'),video=el('video'),status=el('p',undefined,'hint');
  status.setAttribute('role','status');video.muted=true;video.playsInline=true;video.hidden=true;
  const start=btn('Scan barcode',async()=>{
   stopCamera();
-  if(!('BarcodeDetector' in window)||!navigator.mediaDevices?.getUserMedia){status.textContent='Camerascan wordt niet ondersteund in deze browser. Vul de barcode handmatig in of gebruik een externe scanner.';return;}
-  let cancelled=false,stream,timer;start.disabled=true;
-  const stop=()=>{cancelled=true;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());video.srcObject=null;video.hidden=true;start.disabled=false;cancel.hidden=true;};
+  if(!navigator.mediaDevices?.getUserMedia){status.textContent='Camerascan wordt niet ondersteund in deze browser. Vul de barcode handmatig in of gebruik een externe scanner.';return;}
+  let cancelled=false,stream,timer,controls;start.disabled=true;
+  const stop=()=>{cancelled=true;clearTimeout(timer);controls?.stop();stream?.getTracks().forEach(t=>t.stop());video.srcObject=null;video.hidden=true;start.disabled=false;cancel.hidden=true;};
   stopCamera=stop;cancel.hidden=false;status.textContent='Camera openen…';
   try{
-   const supported=await BarcodeDetector.getSupportedFormats();if(cancelled)return;
-   const formats=supported.filter(x=>['ean_13','ean_8','upc_a','upc_e','code_128'].includes(x));if(!formats.length)throw Error('unsupported');
-   const detector=new BarcodeDetector({formats});
+   let detector=null;
+   if('BarcodeDetector' in window){try{const supported=await BarcodeDetector.getSupportedFormats();const formats=supported.filter(x=>['ean_13','ean_8','upc_a','upc_e','code_128'].includes(x));if(formats.length)detector=new BarcodeDetector({formats});}catch{}}
+   let fallback=null;if(!detector)fallback=await loadBarcodeReader();if(cancelled)return;
    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
    if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}
    video.srcObject=stream;video.hidden=false;await video.play();if(cancelled)return;
    status.textContent='Richt de camera op de streepjescode.';
+   if(fallback){
+    const reader=new fallback.BrowserMultiFormatOneDReader();
+    controls=await reader.decodeFromStream(stream,video,(result,error,session)=>{
+     if(cancelled){session.stop();return;}if(result){session.stop();const value=result.getText();stop();status.textContent='Barcode herkend: '+value;onCode(value);}
+    });
+    if(cancelled)controls.stop();return;
+   }
+
    const tick=async()=>{if(cancelled)return;try{const results=await detector.detect(video);if(cancelled)return;if(results.length){const value=results[0].rawValue;stop();status.textContent='Barcode herkend: '+value;onCode(value);return;}}catch{}if(!cancelled)timer=setTimeout(tick,350);};tick();
   }catch(e){stop();status.textContent=e.name==='NotAllowedError'?'Geen cameratoegang. Geef toestemming in je browser of typ de code.':e.message==='unsupported'?'Deze browser herkent geen ondersteunde productbarcodes. Typ de code.':'Camera niet beschikbaar. Je kunt de barcode ook typen.';}
  });
