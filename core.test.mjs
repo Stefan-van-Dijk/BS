@@ -6,3 +6,12 @@ test('Reject broken backup references',()=>assert.throws(()=>validate({schemaVer
 if(process.env.BS_SOURCE)test('Full source and backup roundtrip',()=>{const c=importOverview(readFileSync(process.env.BS_SOURCE,'utf8'));assert.equal(c.categories.length,33);assert.equal(c.recipes.length,27);validate(JSON.parse(JSON.stringify({schemaVersion:1,...c,lists:[]})));console.log(`Import: ${c.categories.length} categories, ${c.products.length} products, ${c.recipes.length} recipes`);});
 
 test('Visible quantity and minus preserve checked items and other products',async()=>{const {productQuantity,decreaseProduct}=await import('./core.mjs');const l={items:[{id:'a',productId:'p',quantity:2,done:false,note:'keep'},{id:'b',productId:'p',quantity:1,done:true,note:''},{id:'c',productId:'other',quantity:5,done:false,note:''}]};assert.equal(productQuantity(l,'p'),2);decreaseProduct(l,'p');assert.equal(productQuantity(l,'p'),1);decreaseProduct(l,'p');assert.equal(productQuantity(l,'p'),0);decreaseProduct(l,'p');assert.equal(l.items.length,2);assert.equal(l.items[0].done,true);assert.equal(productQuantity(l,'other'),5);});
+
+test('Category cycles are removed while shared children and products remain',async()=>{
+ const {removeCategoryCycles}=await import('./core.mjs');
+ const categories=[{id:'h',name:'Home',entries:[{type:'category',id:'a'},{type:'category',id:'b'}]},{id:'a',entries:[{type:'category',id:'h'},{type:'category',id:'b'}]},{id:'b',entries:[{type:'category',id:'b'},{type:'product',id:'p'}]}];
+ assert.equal(removeCategoryCycles(categories),2);
+ assert.deepEqual(categories[1].entries,[{type:'category',id:'b'}]);
+ assert.deepEqual(categories[2].entries,[{type:'product',id:'p'}]);
+ assert.equal(removeCategoryCycles(categories),0);
+});
