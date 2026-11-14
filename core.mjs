@@ -64,3 +64,9 @@ export function decreaseProduct(list,productId){
  if(item.quantity>1)item.quantity=Math.round((item.quantity-1)*1e9)/1e9;
  else list.items=list.items.filter(i=>i.id!==item.id);
 }
+
+export function removeCategoryCycles(categories){
+ const byId=new Map(categories.map(c=>[c.id,c])),active=new Set(),done=new Set();let removed=0;
+ function visit(c){if(done.has(c.id))return;active.add(c.id);c.entries=c.entries.filter(e=>{if(e.type!=='category')return true;if(active.has(e.id)){removed++;return false;}const child=byId.get(e.id);if(child)visit(child);return true;});active.delete(c.id);done.add(c.id);}
+ const home=categories.find(c=>c.name==='Home');if(home)visit(home);categories.forEach(visit);return removed;
+}

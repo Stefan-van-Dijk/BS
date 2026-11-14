@@ -864,10 +864,6 @@
       "name": "Bolletjes",
       "entries": [
         {
-          "type": "category",
-          "id": "c_850ac7cf295a7952"
-        },
-        {
           "type": "product",
           "id": "p_7f6984e75368394a"
         },
@@ -1091,10 +1087,6 @@
       "name": "Wijn",
       "entries": [
         {
-          "type": "category",
-          "id": "c_051eddfc024b0ef0"
-        },
-        {
           "type": "product",
           "id": "p_79e32f6ceb4a4a29"
         },
@@ -1119,10 +1111,6 @@
       "id": "c_75a8dadc8969312e",
       "name": "Thee",
       "entries": [
-        {
-          "type": "category",
-          "id": "c_051eddfc024b0ef0"
-        },
         {
           "type": "product",
           "id": "p_6dd72379024dd411"
@@ -1732,10 +1720,6 @@
       "name": "Schoonmaak Middelen",
       "entries": [
         {
-          "type": "category",
-          "id": "c_ce6fdf8d7a75c8bb"
-        },
-        {
           "type": "product",
           "id": "p_48d90d16389cd086"
         },
@@ -1776,10 +1760,6 @@
       "id": "c_f53a7cf9d2bcada8",
       "name": "Schoonmaak WC",
       "entries": [
-        {
-          "type": "category",
-          "id": "c_ce6fdf8d7a75c8bb"
-        },
         {
           "type": "product",
           "id": "p_25591a2520923883"
@@ -1935,10 +1915,6 @@
       "name": "Kruiden en Specerijen",
       "entries": [
         {
-          "type": "category",
-          "id": "c_226e93ee3f85d191"
-        },
-        {
           "type": "product",
           "id": "p_20f15221185d1040"
         },
@@ -2078,10 +2054,6 @@
       "name": "Notenmix",
       "entries": [
         {
-          "type": "category",
-          "id": "c_172112120655595f"
-        },
-        {
           "type": "product",
           "id": "p_380b2acc783b40af"
         },
@@ -2187,10 +2159,6 @@
       "id": "c_6007fb3f7f80bf51",
       "name": "Verjaardagshapjes",
       "entries": [
-        {
-          "type": "category",
-          "id": "c_b0374de0ad8bae68"
-        },
         {
           "type": "product",
           "id": "p_83b311836041d6b6"
