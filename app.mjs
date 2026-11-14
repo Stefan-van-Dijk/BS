@@ -1,6 +1,6 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles} from './core.mjs?v=20261114-market1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles} from './core.mjs?v=20261114-browse1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
-let homeSection='favorites';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
+let homeSection='favorites',productCategory='';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
 removeCategoryCycles(state.categories);const expanded=new Set();activeList=state.lists.find(l=>l.id===state.activeListId)?.id||state.lists[0]?.id;let timer;
 function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('#toast').style.display='none',3600);}
@@ -12,34 +12,13 @@ function categoryField(value){const l=el('label','Categorie','field'),s=el('sele
 function openModal(title,build,onSubmit,action='Bewaren'){$('#modalTitle').textContent=title;$('#modalBody').replaceChildren();$('#modalSave').textContent=action;build();$('#modalForm').onsubmit=e=>{e.preventDefault();try{if(onSubmit()!==false)closeModal();}catch(err){toast(err.message);}};$('#modal').showModal();}
 function closeModal(){stopCamera();$('#modal').close();}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('close',()=>stopCamera());$('#modal').addEventListener('cancel',()=>stopCamera());
-function switchView(v){view=v;for(const id of ['home','shop','lists','manage'])$('#'+id).hidden=id!==v;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===(v==='shop'?'home':v)));render();}
+function switchView(v){view=v;for(const id of ['home','lists','manage'])$('#'+id).hidden=id!==v;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));render();}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 function render(){
  renderContext();
  $('#welcome').hidden=state.products.length>0||view!=='shop';$('#count').textContent=list()?.items.filter(i=>!i.done).length||0;
  const sel=$('#listSelect');sel.replaceChildren();state.lists.forEach(l=>{const o=el('option',l.name);o.value=l.id;sel.append(o);});sel.value=activeList||'';
- if(view==='home')renderHome();if(view==='shop')renderShop();if(view==='lists')renderList($('#listRows'),$('#onlyNeeded').checked);if(view==='manage')renderManage();
-}
-function renderShop(){const q=norm($('#search').value),cards=$('#cards'),crumbs=$('#crumbs');cards.replaceChildren();crumbs.replaceChildren();
- let entries;if(q)entries=[...state.products.filter(p=>norm(p.name).includes(q)).map(p=>({type:'product',id:p.id})),...state.recipes.filter(r=>norm(r.name).includes(q)).map(r=>({type:'recipe',id:r.id}))];else{const home=state.categories.find(c=>c.name==='Home');entries=home?home.entries:state.categories.map(c=>({type:'category',id:c.id}));}
- function appendEntries(entries,target,ancestors=[]){
- for(const item of entries){
- const obj=item.type==='product'?prod(item.id):item.type==='category'?cat(item.id):state.recipes.find(r=>r.id===item.id);if(!obj)continue;
- if(item.type==='product'){
-  target.append(productControl(obj));
- }else if(item.type==='category'){
-  if(ancestors.includes(obj.id))continue;
-  const key=[...ancestors,obj.id].join('/'),branch=el('details',undefined,'categoryBranch'),summary=el('summary',obj.name),children=el('div',undefined,'treeChildren');
-  branch.open=expanded.has(key);branch.append(summary,children);branch.ontoggle=()=>{if(branch.open)expanded.add(key);else expanded.delete(key);};
-  appendEntries(obj.entries,children,[...ancestors,obj.id]);target.append(branch);
- }else{
-  const row=btn('',()=>chooseRecipe(obj),'browseLine');row.append(el('span',obj.name),el('small',obj.ingredients.length+' ingrediënten'),el('span','›','chevron'));target.append(row);
- }
- }
- }
- appendEntries(entries,cards);
- refreshQuantities();
- if(!entries.length)cards.append(el('p',q?'Niets gevonden. Voeg het product toe via het invoerveld bij Verzamelen.':'Je catalogus wordt geladen.','empty'));
+ if(view==='home')renderHome();if(view==='lists')renderList($('#listRows'),$('#onlyNeeded').checked);if(view==='manage')renderManage();
 }
 function ensureList(){if(!list()){const l={id:uid(),name:'Boodschappen',items:[]};state.lists.push(l);activeList=l.id;}}
 function refreshQuantities(){
@@ -78,7 +57,7 @@ function renderList(target=$('#listRows'),neededOnly=false){target.replaceChildr
  const groups=new Map();$('#shoppingProgress').textContent=l.items.filter(i=>i.done).length+' / '+l.items.length;if(neededOnly&&l.items.every(i=>i.done)){target.append(el('p','Alles in de tas. Goed geregeld!','empty success'));return;}for(const item of l.items.filter(i=>!neededOnly||!i.done)){const name=cat(prod(item.productId)?.categoryId)?.name||'Overig';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
  for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.sort((a,b)=>Number(a.done)-Number(b.done)).forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');check.onchange=()=>{i.done=check.checked;if(i.done&&!i.purchaseRecorded){i.purchaseRecorded=true;const p=prod(i.productId);p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}save();render();};const text=btn('',()=>chooseProduct(prod(i.productId),i),'text');text.setAttribute('aria-label',prod(i.productId).name+' aantal of notitie aanpassen');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);hold(text,()=>chooseProduct(prod(i.productId),i));text.tabIndex=0;text.title='Lang indrukken voor aantal en notitie; swipe om te bewerken';text.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();editProduct(prod(i.productId));}};swipeEdit(row,()=>editProduct(prod(i.productId)));target.append(row);});}
 }
-$('#search').oninput=renderShop;$('#manageSearch').oninput=renderManage;$('#listSelect').onchange=e=>{activeList=e.target.value;save();render();};
+$('#manageSearch').oninput=renderManage;$('#listSelect').onchange=e=>{activeList=e.target.value;save();render();};
 $('#newList').onclick=()=>{let name;openModal('Nieuwe lijst',()=>name=field('Naam','text'),()=>{if(!name.value.trim())throw Error('Geef de lijst een naam.');const l={id:uid(),name:name.value.trim(),items:[]};state.lists.push(l);activeList=l.id;save();render();});};
 $('#renameList').onclick=()=>{if(!list())return;let name;openModal('Lijst hernoemen',()=>name=field('Naam','text',list().name),()=>{if(!name.value.trim())throw Error('Geef de lijst een naam.');list().name=name.value.trim();save();render();});};
 $('#deleteList').onclick=()=>{if(list()&&confirm('Deze lijst verwijderen?')){state.lists=state.lists.filter(l=>l.id!==activeList);activeList=state.lists[0]?.id;save();render();}};
@@ -179,7 +158,7 @@ function barcodeModal(){
   quickAdd(p);render();toast(p.name+' toegevoegd');
  },'Koppelen & toevoegen');startScan.click();
 }
-$('#scan').onclick=barcodeModal;
+
 render();
 
 async function loadPublishedCatalog(){
@@ -217,8 +196,15 @@ function renderHome(){
   if(!products.length){target.append(el('p','Hier verschijnen je favorieten en producten die je eerder hebt afgevinkt. Begin met zoeken of bekijk alle producten.','empty'));target.append(btn('Alle producten bekijken',()=>{homeSection='products';renderHome();},'secondary'));}
   products.forEach(p=>target.append(productControl(p)));
  }else if(homeSection==='products'){
-  target.append(btn('Zoeken & categorieën openen',()=>switchView('shop'),'secondary'));
-  const products=state.products.filter(p=>norm(p.name).includes(norm($('#quickName').value))).slice(0,30);products.forEach(p=>target.append(productControl(p)));
+  const filters=el('div',undefined,'categoryFilters');filters.setAttribute('role','group');filters.setAttribute('aria-label','Productcategorie');
+  const options=[{id:'',name:'Alles'},...state.categories.filter(c=>c.name!=='Home'&&state.products.some(p=>p.categoryId===c.id||c.entries.some(e=>e.type==='product'&&e.id===p.id))).sort((a,b)=>a.name.localeCompare(b.name,'nl'))];
+  if(!options.some(c=>c.id===productCategory))productCategory='';
+  for(const c of options){const button=btn(c.name,()=>{productCategory=c.id;renderHome();},'categoryChip');button.classList.toggle('active',productCategory===c.id);button.setAttribute('aria-pressed',String(productCategory===c.id));filters.append(button);}target.append(filters);
+  const selected=cat(productCategory),q=norm($('#quickName').value);
+  const products=state.products.filter(p=>(!selected||p.categoryId===selected.id||selected.entries.some(e=>e.type==='product'&&e.id===p.id))&&norm(p.name).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'nl'));
+  target.append(el('p',products.length+' producten'+(selected?' · '+selected.name:''),'hint'));
+  if(!products.length)target.append(el('p','Geen producten gevonden. Kies Alles of pas je zoektekst aan. Met + Op de lijst kun je een nieuw product toevoegen.','empty'));
+  products.forEach(p=>target.append(productControl(p)));
  }else{
   const activity=homeSection==='activities';heading.append(btn(activity?'+ Activiteit':'+ Gerecht',()=>editRecipe(undefined,activity?'activity':'recipe'),'quiet'));
   target.append(el('p',activity?'Kies een moment en zet op je lijst wat nog ontbreekt.':'Kies een gerecht. Vink uit wat je al in huis hebt.','hint'));
@@ -245,7 +231,7 @@ $('#activeListSelect').onchange=e=>{activeList=e.target.value;save();render();};
 $('#contextNew').onclick=()=>$('#newList').click();
 $('#addMore').onclick=()=>switchView('home');
 document.querySelectorAll('[data-source]').forEach(b=>b.onclick=()=>{homeSection=b.dataset.source;renderHome();});
-$('#quickName').oninput=()=>{if(homeSection!=='products')homeSection='products';renderHome();};
+$('#quickName').oninput=()=>{homeSection='products';productCategory='';renderHome();};
 $('#quickForm').onsubmit=e=>{
  e.preventDefault();const name=$('#quickName').value.trim();if(!name)return;
  let p=state.products.find(p=>norm(p.name)===norm(name));
