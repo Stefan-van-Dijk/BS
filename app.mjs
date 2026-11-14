@@ -1,11 +1,13 @@
-import {connectSharon,snapshot,installSnapshot} from './sharon.mjs?v=20261114-shoplist1';
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-shoplist1';
+import {listSyncStatus} from './sync-status.mjs?v=20261114-status1';
+import {connectSharon,snapshot,installSnapshot} from './sharon.mjs?v=20261114-status1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-status1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+let cloudBusy=false;
 let homeSection='mylist',productCategory='',homeFilter='needed';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
 removeCategoryCycles(state.categories);const expanded=new Set();activeList=state.lists.find(l=>l.id===state.activeListId)?.id||state.lists[0]?.id;let timer;
 function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('#toast').style.display='none',3600);}
-function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return false;}try{markCloudChanges();state.activeListId=activeList;localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';return true;}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');return false;}}
+function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return false;}try{markCloudChanges();state.activeListId=activeList;localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';updateCloudStatus();return true;}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');return false;}}
 const list=()=>state.lists.find(l=>l.id===activeList),prod=id=>state.products.find(p=>p.id===id),cat=id=>state.categories.find(c=>c.id===id);
 function btn(text,fn,cls='secondary'){const b=el('button',text,cls);b.type='button';b.onclick=fn;return b;}
 function field(label,type,value=''){const l=el('label',label,'field'),input=el('input');input.type=type;input.value=value;l.append(input);$('#modalBody').append(l);return input;}
@@ -192,6 +194,7 @@ $('#retryCatalog').onclick=loadPublishedCatalog;
 loadPublishedCatalog();
 
 function renderContext(){
+ updateCloudStatus();
  const select=$('#activeListSelect');select.replaceChildren();for(const l of state.lists){const o=el('option',l.name);o.value=l.id;select.append(o);}select.value=activeList||'';
  const n=list()?.items.filter(i=>!i.done).length||0;$('#count').textContent=n;$('#contextCount').textContent=n===1?'1 product nodig':n+' producten nodig';
 }
@@ -447,12 +450,11 @@ function reviewSimilarProducts(){
  openModal('Vergelijkbare producten',()=>{info=el('p');$('#modalBody').append(info,el('p','Controleer of dit hetzelfde product is. Barcodes, oude zoeknamen en lijstverwijzingen blijven bewaard.','hint'));name=field('Gezamenlijke productnaam','text');skip=btn('Apart houden',()=>{const pair=pairs[position];state.ignoredProductPairs=state.ignoredProductPairs||[];state.ignoredProductPairs.push([pair.a,pair.b].sort().join('|'));save();position++;draw();});$('#modalBody').append(skip);draw();},()=>{const pair=pairs[position];if(!pair)return;mergeProductVariants(state,[pair.a,pair.b],name.value);save();render();closeModal();reviewSimilarProducts();return false;},'Samenvoegen');
 }
 
-let cloudBusy=false;
 function markCloudChanges(){
  for(const l of state.lists){if(!l.cloud)continue;const payload=snapshot(state,l),json=JSON.stringify(payload);if(l.cloud.role==='read'){if(json!==l.cloud.base){const oldId=l.id;l.id=uid();l.name+=' (eigen kopie)';delete l.cloud;if(activeList===oldId)activeList=l.id;toast('Alleen leesrechten: je wijziging is als eigen kopie bewaard.');}continue;}if(json!==l.cloud.base&&json!==l.cloud.pending?.json)l.cloud.pending={json,operation:crypto.randomUUID()};}
 }
 async function syncCloud(){
- if(cloudBusy||saveBlocked||document.hidden)return;cloudBusy=true;let syncingList;
+ if(cloudBusy||saveBlocked||document.hidden)return;cloudBusy=true;updateCloudStatus();let syncingList;
  try{
   const linked=state.lists.filter(l=>l.cloud);if(!linked.length)return;
   const api=await connectSharon();
@@ -462,22 +464,22 @@ async function syncCloud(){
    const pending=l.cloud.pending;
    if(pending){
     const response=await api.write(JSON.parse(pending.json),l.cloud.revision,pending.operation);
-    l.cloud.revision=response.list.revision;l.cloud.base=pending.json;
+    l.cloud.revision=response.list.revision;l.cloud.base=pending.json;l.cloud.confirmedAt=Date.now();delete l.cloud.error;
     if(l.cloud.pending===pending)delete l.cloud.pending;
     localStorage.setItem(KEY,JSON.stringify(state));
    }else if(!$('#modal').open){
-    const response=await api.read(l.id);l.cloud.role=response.role;
+    const response=await api.read(l.id);if(l.cloud.pending||!state.lists.includes(l))continue;l.cloud.role=response.role;l.cloud.confirmedAt=Date.now();delete l.cloud.error;
     if(response.list.revision!==l.cloud.revision){
      const payload=response.list.payload;
      validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});
-     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});
+     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload),confirmedAt:Date.now()});
      localStorage.setItem(KEY,JSON.stringify(state));render();
-    }
+    }else localStorage.setItem(KEY,JSON.stringify(state));
    }
   }
-  $('#saveStatus').textContent=linked.some(l=>l.cloud.pending||l.cloud.conflict)?'Lokaal bewaard · wijzigingen wachten':'Bijgewerkt via Sharon';
- }catch(error){if(syncingList?.cloud&&/gedeelde lijst is gewijzigd|geen toegang|alleen bekijken/.test(error.message)){syncingList.cloud.conflict=true;localStorage.setItem(KEY,JSON.stringify(state));}$('#saveStatus').textContent='Lokaal bewaard · synchronisatie wacht';}
- finally{cloudBusy=false;}
+
+ }catch(error){for(const l of state.lists.filter(l=>l.cloud)){if(!syncingList||l===syncingList)l.cloud.error=error.message;}if(syncingList?.cloud&&/gedeelde lijst is gewijzigd|geen toegang|alleen bekijken/.test(error.message)){syncingList.cloud.conflict=true;localStorage.setItem(KEY,JSON.stringify(state));}$('#saveStatus').textContent='Lokaal bewaard · synchronisatie wacht';}
+ finally{cloudBusy=false;updateCloudStatus();}
 }
 async function openSharonLists(){
  try{
@@ -486,21 +488,21 @@ async function openSharonLists(){
   if(requested&&remote.lists.some(row=>row.id===requested)){
    const existing=state.lists.find(l=>l.id===requested);
    if(existing){activeList=requested;render();await syncCloud();}
-   else{const response=await api.read(requested),payload=response.list.payload;validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});activeList=requested;save();render();}
+   else{const response=await api.read(requested),payload=response.list.payload;validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload),confirmedAt:Date.now()});activeList=requested;save();render();}
    history.replaceState(history.state,'',location.pathname);return;
   }
   openModal('ShopList · Sharon',()=>{
    $('#modalBody').append(el('p','Deelrechten beheer je in Sharon. Bij een versieconflict blijft je lokale wijziging bewaard.','hint'));
    const current=list();
    if(current&&!current.cloud)$('#modalBody').append(btn('Deze lijst verbinden',async()=>{
-    try{const payload=snapshot(state,current);const response=await api.write(payload,0,crypto.randomUUID(),true);current.cloud={revision:response.list.revision,role:'owner',base:JSON.stringify(payload)};save();closeModal();toast('Lijst verbonden met Sharon');}catch(e){toast(e.message);}
+    try{const payload=snapshot(state,current);const response=await api.write(payload,0,crypto.randomUUID(),true);current.cloud={revision:response.list.revision,role:'owner',base:JSON.stringify(payload),confirmedAt:Date.now()};save();closeModal();toast('Lijst verbonden met Sharon');}catch(e){toast(e.message);}
    }));
    for(const row of remote.lists)$('#modalBody').append(btn(row.name+' · openen / online versie ophalen',async()=>{
     try{
      const existing=state.lists.find(l=>l.id===row.id);const response=await api.read(row.id),payload=response.list.payload;
      validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});
      if(existing&&JSON.stringify(snapshot(state,existing))!==JSON.stringify(payload)){const copy=structuredClone(existing);copy.id=uid();copy.name+=' (lokale wijzigingen)';delete copy.cloud;state.lists.push(copy);}
-     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});activeList=row.id;save();closeModal();render();
+     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload),confirmedAt:Date.now()});activeList=row.id;save();closeModal();render();
     }catch(e){toast(e.message);}
    }));
    const link=el('a','Delen en toegang beheren in Sharon');link.href='https://stefan-van-dijk.github.io/sharon/';$('#modalBody').append(link);
@@ -511,3 +513,13 @@ $('#sharonLists').onclick=openSharonLists;
 setInterval(syncCloud,15000);
 window.addEventListener('online',syncCloud);
 if(new URLSearchParams(location.search).has('shoplist'))openSharonLists();
+
+function updateCloudStatus(){
+ const button=$('#listSyncStatus');if(!button)return;
+ const status=listSyncStatus(list(),{online:navigator.onLine,busy:cloudBusy});button.textContent=status.label;button.dataset.state=status.state;button.title=status.detail;button.setAttribute('aria-label',status.label+'. '+status.detail);
+}
+$('#listSyncStatus').onclick=()=>{if(!list()?.cloud||list().cloud.conflict)openSharonLists();else syncCloud();};
+window.addEventListener('offline',updateCloudStatus);
+document.addEventListener('visibilitychange',()=>{updateCloudStatus();if(!document.hidden)syncCloud();});
+setInterval(updateCloudStatus,10000);
+updateCloudStatus();syncCloud();
