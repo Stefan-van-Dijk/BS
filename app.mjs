@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs?v=20261113-catalog1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs?v=20261113-compact1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='shop',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -22,17 +22,45 @@ function render(){
 function renderShop(){const q=norm($('#search').value),cards=$('#cards'),crumbs=$('#crumbs');cards.replaceChildren();crumbs.replaceChildren();
  crumbs.append(btn('Alle categorieën',()=>{path=[];render();},'quiet'));path.forEach((id,i)=>crumbs.append(btn(cat(id)?.name||'',()=>{path=path.slice(0,i+1);render();},'quiet')));
  let entries;if(q)entries=[...state.products.filter(p=>norm(p.name).includes(q)).map(p=>({type:'product',id:p.id})),...state.recipes.filter(r=>norm(r.name).includes(q)).map(r=>({type:'recipe',id:r.id}))];else if(path.length)entries=cat(path.at(-1))?.entries||[];else{const home=state.categories.find(c=>c.name==='Home');entries=home?home.entries:state.categories.map(c=>({type:'category',id:c.id}));}
- for(const item of entries){const obj=item.type==='product'?prod(item.id):item.type==='category'?cat(item.id):state.recipes.find(r=>r.id===item.id);if(!obj)continue;const card=btn('',()=>{if(item.type==='category'){path.push(obj.id);$('#search').value='';render();}else if(item.type==='recipe')chooseRecipe(obj);else chooseProduct(obj);},'card '+item.type);card.append(el('span',item.type==='category'?'Categorie':item.type==='recipe'?'Gerecht':'Product','tag'),el('strong',obj.name),el('span',item.type==='category'?'Bekijk producten →':item.type==='recipe'?`${obj.ingredients.length} ingrediënten · kiezen →`:'Toevoegen +','action'));cards.append(card);}
+ for(const item of entries){const obj=item.type==='product'?prod(item.id):item.type==='category'?cat(item.id):state.recipes.find(r=>r.id===item.id);if(!obj)continue;const card=btn('',()=>{if(item.type==='category'){path.push(obj.id);$('#search').value='';render();}else if(item.type==='recipe')chooseRecipe(obj);else quickAdd(obj);},'card '+item.type);card.append(el('span',item.type==='category'?'Categorie':item.type==='recipe'?'Gerecht':'Product','tag'),el('strong',obj.name),el('span',item.type==='category'?'Bekijk producten →':item.type==='recipe'?`${obj.ingredients.length} ingrediënten · kiezen →`:'Toevoegen +','action'));if(item.type==='product'){
+ const wrap=el('div',undefined,'productWrap');
+ card.setAttribute('aria-label',obj.name+' toevoegen');
+ hold(card,()=>chooseProduct(obj));
+ const edit=btn('⋯',()=>chooseProduct(obj),'productOptions');edit.setAttribute('aria-label','Aantal en notitie voor '+obj.name);
+ wrap.append(card,edit);cards.append(wrap);
+ }else cards.append(card);}
  if(!entries.length)cards.append(el('p',q?'Geen resultaten. Voeg een product toe via Beheren.':'Laad je overzicht om te beginnen.','empty'));
 }
 function ensureList(){if(!list()){const l={id:uid(),name:'Boodschappen',items:[]};state.lists.push(l);activeList=l.id;}}
+function quickAdd(p){
+ if(p.input==='note'){chooseProduct(p);return;}
+ ensureList();addItem(list(),p.id);save();$('#count').textContent=list().items.filter(i=>!i.done).length;
+ toast(p.name+' toegevoegd aan '+list().name);
+}
+function hold(element,action){
+ let timer,start,suppress=false;
+ const cancel=()=>{clearTimeout(timer);timer=null;};
+ element.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button!==0)return;suppress=false;start=[e.clientX,e.clientY];timer=setTimeout(()=>{timer=null;suppress=true;action();},500);});
+ element.addEventListener('pointermove',e=>{if(start&&Math.hypot(e.clientX-start[0],e.clientY-start[1])>10)cancel();});
+ for(const event of ['pointerup','pointercancel','pointerleave'])element.addEventListener(event,cancel);
+ element.addEventListener('click',e=>{if(suppress){e.preventDefault();e.stopImmediatePropagation();suppress=false;}},true);
+ element.addEventListener('contextmenu',e=>e.preventDefault());
+}
+function swipeRow(row,item){
+ let start=null,dx=0,dragging=false;
+ const reset=()=>{start=null;dx=0;dragging=false;row.style.transform='';row.classList.remove('swiping');};
+ row.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button!==0||e.target.closest('button,input,select,a'))return;start=[e.clientX,e.clientY];dx=0;});
+ row.addEventListener('pointermove',e=>{if(!start)return;dx=e.clientX-start[0];const dy=e.clientY-start[1];if(!dragging&&Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)){reset();return;}if(Math.abs(dx)>14&&Math.abs(dx)>Math.abs(dy)*1.5){dragging=true;row.classList.add('swiping');row.style.transform=`translateX(${Math.max(-85,Math.min(85,dx))}px)`;}});
+ row.addEventListener('pointerup',()=>{const toggle=dragging&&Math.abs(dx)>=65;reset();if(toggle){item.done=!item.done;save();render();toast(item.done?'Afgevinkt':'Weer op je lijst');}});
+ row.addEventListener('pointercancel',reset);row.addEventListener('pointerleave',reset);
+}
 function chooseProduct(p){let quantity,note;openModal(p.name,()=>{quantity=field('Aantal','number','1');quantity.min='0.01';quantity.step='any';note=field(p.input==='note'?'Omschrijving / variant':'Notitie (optioneel)','text');$('#modalBody').append(el('p','Toevoegen aan: '+(list()?.name||'Boodschappen'),'hint'));},()=>{ensureList();addItem(list(),p.id,Number(quantity.value),note.value.trim());save();render();toast('Toegevoegd aan '+list().name);},'Toevoegen');}
 function chooseRecipe(r){let checks=[];openModal(r.name,()=>{if(!r.ingredients.length){$('#modalBody').append(el('p','Dit gerecht heeft nog geen ingrediënten. Vul het aan via Beheren.'));return;}
  $('#modalBody').append(el('p','Vink uit wat je al in huis hebt. Hoeveelheden in productnamen blijven letterlijk behouden.'));
  r.ingredients.forEach(i=>{const l=el('label',undefined,'checkrow'),c=el('input');c.type='checkbox';c.checked=true;l.append(c,el('span',`${i.quantity} × ${prod(i.productId)?.name}${i.note?' · '+i.note:''}`));$('#modalBody').append(l);checks.push([c,i]);});},()=>{ensureList();let n=0;checks.forEach(([c,i])=>{if(c.checked){addItem(list(),i.productId,i.quantity,i.note);n++;}});save();render();toast(n+' ingrediënten toegevoegd');},'Selectie toevoegen');}
 function renderList(){const target=$('#listRows');target.replaceChildren();const l=list();$('#progress').textContent=l?`${l.items.filter(i=>i.done).length} van ${l.items.length} afgevinkt`: 'Maak een lijst om te beginnen.';if(!l?.items.length){target.append(el('p','Je lijst is nog leeg. Kies producten of een gerecht bij Samenstellen.','empty'));return;}
  const groups=new Map();for(const item of l.items){const name=cat(prod(item.productId)?.categoryId)?.name||'Overig';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
- for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.sort((a,b)=>Number(a.done)-Number(b.done)).forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');check.onchange=()=>{i.done=check.checked;save();render();};const text=el('div',undefined,'text');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);target.append(row);});}
+ for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.sort((a,b)=>Number(a.done)-Number(b.done)).forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');check.onchange=()=>{i.done=check.checked;save();render();};const text=el('div',undefined,'text');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);swipeRow(row,i);target.append(row);});}
 }
 $('#search').oninput=renderShop;$('#manageSearch').oninput=renderManage;$('#listSelect').onchange=e=>{activeList=e.target.value;render();};
 $('#newList').onclick=()=>{let name;openModal('Nieuwe lijst',()=>name=field('Naam','text'),()=>{if(!name.value.trim())throw Error('Geef de lijst een naam.');const l={id:uid(),name:name.value.trim(),items:[]};state.lists.push(l);activeList=l.id;save();render();});};
