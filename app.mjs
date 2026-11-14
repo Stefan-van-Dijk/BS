@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile} from './core.mjs?v=20261114-boards1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine} from './core.mjs?v=20261114-simple1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='favorites',productCategory='';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -12,7 +12,7 @@ function categoryField(value){const l=el('label','Categorie','field'),s=el('sele
 function openModal(title,build,onSubmit,action='Bewaren'){$('#modalTitle').textContent=title;$('#modalBody').replaceChildren();$('#modalSave').textContent=action;build();$('#modalForm').onsubmit=e=>{e.preventDefault();try{if(onSubmit()!==false)closeModal();}catch(err){toast(err.message);}};$('#modal').showModal();}
 function closeModal(){stopDeck();stopCamera();$('#modal').close();}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('close',()=>{stopCamera();stopDeck();});$('#modal').addEventListener('cancel',()=>{stopCamera();stopDeck();});
-function switchView(v){view=v;for(const id of ['home','lists','manage'])$('#'+id).hidden=id!==v;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));render();}
+function switchView(v){view=v;$('#contextNew').hidden=v==='lists';for(const id of ['home','lists','manage'])$('#'+id).hidden=id!==v;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));render();}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 function render(){
  renderContext();
@@ -55,7 +55,7 @@ function chooseRecipe(r){let checks=[];openModal(r.name,()=>{if(!r.ingredients.l
  r.ingredients.forEach(i=>{const l=el('label',undefined,'checkrow'),c=el('input');c.type='checkbox';c.checked=true;l.append(c,el('span',`${i.quantity} × ${prod(i.productId)?.name}${i.note?' · '+i.note:''}`));$('#modalBody').append(l);checks.push([c,i]);});},()=>{ensureList();let n=0;checks.forEach(([c,i])=>{if(c.checked){addItem(list(),i.productId,i.quantity,i.note);n++;}});save();render();toast(n+' ingrediënten toegevoegd');},'Selectie toevoegen');}
 function renderList(target=$('#listRows'),neededOnly=false){target.replaceChildren();const l=list();$('#progress').textContent=l?`${l.items.filter(i=>i.done).length} van ${l.items.length} afgevinkt`: 'Maak een lijst om te beginnen.';if(!l?.items.length){$('#shoppingProgress').textContent='0 / 0';target.append(el('p','Nog niets op je lijst. Voeg producten toe bij Verzamelen.','empty'));return;}
  const groups=new Map();$('#shoppingProgress').textContent=l.items.filter(i=>i.done).length+' / '+l.items.length;if(neededOnly&&l.items.every(i=>i.done)){target.append(el('p','Alles in de tas. Goed geregeld!','empty success'));return;}for(const item of l.items.filter(i=>!neededOnly||!i.done)){const name=cat(prod(item.productId)?.categoryId)?.name||'Overig';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
- for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');row.dataset.listItem=i.id;check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');const setDone=value=>{i.done=value;check.checked=value;row.classList.toggle('done',value);if(value&&!i.purchaseRecorded){i.purchaseRecorded=true;const p=prod(i.productId);p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}save();renderContext();$('#progress').textContent=`${l.items.filter(item=>item.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(item=>item.done).length+' / '+l.items.length;};check.onchange=()=>setDone(check.checked);const text=btn('',()=>chooseProduct(prod(i.productId),i),'text');text.setAttribute('aria-label',prod(i.productId).name+' aantal of notitie aanpassen');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);hold(text,()=>chooseProduct(prod(i.productId),i));text.tabIndex=0;text.title='Tik voor aantal en notitie; swipe om af te vinken of terug te zetten';text.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();editProduct(prod(i.productId));}};swipeAction(row,()=>setDone(!i.done));target.append(row);});}
+ for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');row.dataset.listItem=i.id;check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');const setDone=value=>{i.done=value;check.checked=value;row.classList.toggle('done',value);if(value&&!i.purchaseRecorded){i.purchaseRecorded=true;const p=prod(i.productId);p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}save();renderContext();$('#progress').textContent=`${l.items.filter(item=>item.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(item=>item.done).length+' / '+l.items.length;};check.onchange=()=>setDone(check.checked);const text=btn('',()=>setDone(!i.done),'text');text.setAttribute('aria-label',prod(i.productId).name+' afvinken of terugzetten');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('span',i.quantity+' ×','listQuantity');qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);row.append(check,text,qty);swipeAction(row,()=>setDone(!i.done));target.append(row);});}
 }
 $('#manageSearch').oninput=renderManage;$('#listSelect').onchange=e=>{activeList=e.target.value;save();render();};
 $('#newList').onclick=()=>{let name;openModal('Nieuwe lijst',()=>name=field('Naam','text'),()=>{if(!name.value.trim())throw Error('Geef de lijst een naam.');const l={id:uid(),name:name.value.trim(),items:[]};state.lists.push(l);activeList=l.id;save();render();});};
@@ -229,7 +229,7 @@ function seedActivities(){
 
 $('#activeListSelect').onchange=e=>{activeList=e.target.value;save();render();};
 $('#contextNew').onclick=()=>$('#newList').click();
-$('#addMore').onclick=()=>switchView('home');
+
 document.querySelectorAll('[data-source]').forEach(b=>b.onclick=()=>{homeSection=b.dataset.source;renderHome();});
 $('#quickName').oninput=()=>{homeSection='products';productCategory='';renderHome();};
 $('#quickForm').onsubmit=e=>{
@@ -253,21 +253,20 @@ function pickScan(){
   const value=code.value.trim();if(!value){status.textContent='Scan of typ een barcode.';return;}
   let item=list().items.find(i=>!i.done&&prod(i.productId).barcodes.includes(value))||list().items.find(i=>!i.done&&i.id===select.value);
   if(!item){status.textContent='Kies de bijbehorende openstaande lijstregel. Een al afgevinkt product wordt niet opnieuw toegevoegd.';return;}
-  if(!Number.isInteger(item.quantity)){status.textContent='Deze hoeveelheid is geen aantal stuks. Vink dit product handmatig af.';return;}
   const p=prod(item.productId),other=state.products.find(p=>p.barcodes.includes(value));if(other&&other.id!==p.id){status.textContent='Deze barcode hoort bij '+other.name+'. Kies de juiste lijstregel.';return;}
   if(!p.barcodes.includes(value))p.barcodes.push(value);
-  item.scannedCodes=Array.isArray(item.scannedCodes)?item.scannedCodes:[];
-  if(item.scannedCodes.length>=item.quantity){status.textContent='Alle stuks zijn al gescand.';return;}
-  item.scannedCodes.push(value);item.done=item.scannedCodes.length===item.quantity;
+  markScannedLine(item,value);
   if(item.done&&!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
-  save();updatePickedRows();status.textContent=p.name+' · '+item.scannedCodes.length+' van '+item.quantity+' gepakt. Kies Scan barcode voor het volgende product.';code.value='';select.value='';
+  save();updatePickedRows();status.textContent=p.name+' · '+item.quantity+' × afgevinkt. Bij de kassa verschijnt de code per stuk.';code.value='';select.value='';for(const option of [...select.options]){if(list().items.find(i=>i.id===option.value)?.done)option.remove();}start.textContent='Scan volgend product';
  };
  openModal('Scan wat je pakt',()=>{
-  code=field('Barcode','text');code.inputMode='numeric';
+  $('#modalBody').append(el('p','Richt je camera op de streepjescode van het product. Eén scan streept de hele regel af, inclusief het aantal.','hint'));
+  code=field('Barcode (of handmatig invoeren)','text');code.inputMode='numeric';
   start=cameraControl($('#modalBody'),value=>{code.value=value;accept();});
   select=el('select');select.setAttribute('aria-label','Koppel aan lijstregel');const none=el('option','Onbekende barcode? Kies je product');none.value='';select.append(none);for(const i of list().items.filter(i=>!i.done)){const o=el('option',prod(i.productId).name);o.value=i.id;select.append(o);}$('#modalBody').append(select);
-  status=el('p','Eén scan telt als één stuk. De regels blijven op hun plek.','hint');status.setAttribute('role','status');$('#modalBody').append(status);
- },()=>{accept();return false;},'Dit stuk registreren');start.click();
+  select.onchange=()=>{if(code.value.trim()&&select.value)accept();};
+  status=el('p','Een onbekende barcode? Kies één keer het bijbehorende product uit je lijst.','hint');status.setAttribute('role','status');$('#modalBody').append(status);
+ },()=>{accept();return false;},'Afstrepen');start.textContent='Open camera en scan';start.click();
 }
 function loadBarcodeWriter(){
  if(window.JsBarcode)return Promise.resolve();

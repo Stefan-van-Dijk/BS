@@ -102,3 +102,10 @@ export function saveBeepProfile(profiles,chain,location,tone){
  const profile={id:existing?.id||uid(),chain,location,frequency:tone.frequency,duration:tone.duration,minPurity:.45,uncorrected:0,corrections:0,updatedAt:new Date().toISOString()};
  if(existing)Object.assign(existing,profile);else profiles.push(profile);return existing||profile;
 }
+
+export function markScannedLine(item,barcode){
+ item.done=true;
+ // A single packaging scan represents the complete shopping-list quantity.
+ item.scannedCodes=Number.isInteger(item.quantity)&&item.quantity<=200?Array(item.quantity).fill(barcode):[];
+ item.checkoutBarcode=barcode;
+}

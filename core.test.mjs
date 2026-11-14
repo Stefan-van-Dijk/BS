@@ -49,3 +49,9 @@ test('beep profiles are shared across lists, with location priority and chain fa
  assert.equal(findBeepProfile(restored.beepProfiles,'Jumbo','').frequency,2000);
  assert.throws(()=>saveBeepProfile(profiles,'','',{frequency:2000}));
 });
+
+test('one shopping scan checks the entire line and preserves six checkout codes',async()=>{
+ const {markScannedLine}=await import('./core.mjs');const item={quantity:6,done:false,scannedCodes:['old']};
+ markScannedLine(item,'3274080005003');assert.equal(item.done,true);assert.equal(item.quantity,6);assert.deepEqual(item.scannedCodes,Array(6).fill('3274080005003'));
+ item.done=false;markScannedLine(item,'96385074');assert.deepEqual(item.scannedCodes,Array(6).fill('96385074'));
+});
