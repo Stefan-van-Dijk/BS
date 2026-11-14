@@ -1,10 +1,10 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,importShoppingList} from './core.mjs?v=20261114-import1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,importShoppingList} from './core.mjs?v=20261114-scanfix1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='products',productCategory='';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
 removeCategoryCycles(state.categories);const expanded=new Set();activeList=state.lists.find(l=>l.id===state.activeListId)?.id||state.lists[0]?.id;let timer;
 function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('#toast').style.display='none',3600);}
-function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return;}try{localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');}}
+function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return false;}try{localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';return true;}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');return false;}}
 const list=()=>state.lists.find(l=>l.id===activeList),prod=id=>state.products.find(p=>p.id===id),cat=id=>state.categories.find(c=>c.id===id);
 function btn(text,fn,cls='secondary'){const b=el('button',text,cls);b.type='button';b.onclick=fn;return b;}
 function field(label,type,value=''){const l=el('label',label,'field'),input=el('input');input.type=type;input.value=value;l.append(input);$('#modalBody').append(l);return input;}
@@ -102,25 +102,38 @@ function cameraControl(container,onCode){
    let detector=null;
    if('BarcodeDetector' in window){try{const supported=await BarcodeDetector.getSupportedFormats();const formats=supported.filter(x=>['ean_13','ean_8','upc_a','upc_e','code_128'].includes(x));if(formats.length)detector=new BarcodeDetector({formats});}catch{}}
    let fallback=null;if(!detector)fallback=await loadBarcodeReader();if(cancelled)return;
-   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
    if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}
    video.srcObject=stream;video.hidden=false;await video.play();if(cancelled)return;
    status.textContent='Richt de camera op de streepjescode.';
-   if(fallback){
-    const reader=new fallback.BrowserMultiFormatOneDReader();
-    controls=await reader.decodeFromStream(stream,video,(result,error,session)=>{
-     if(cancelled){session.stop();return;}if(result){session.stop();const value=result.getText();stop();status.textContent='Barcode herkend: '+value;onCode(value);}
-    });
-    if(cancelled)controls.stop();return;
-   }
+   const decoded=value=>{if(cancelled)return;stop();status.textContent='Barcode herkend: '+value;try{onCode(value);}catch{status.textContent='Barcode '+value+' gelezen. Vul deze code handmatig in om verder te gaan.';}};
+   const useFallback=async()=>{
+    try{const library=fallback||await loadBarcodeReader();if(cancelled)return;const reader=new library.BrowserMultiFormatOneDReader();
+     controls=await reader.decodeFromStream(stream,video,(result,error,session)=>{if(cancelled){session?.stop();return;}if(result)decoded(result.getText());});if(cancelled)controls?.stop();
+    }catch{if(!cancelled){stop();status.textContent='Barcodeherkenning kon niet starten. Typ de code hieronder.';}}
+   };
+   if(fallback){await useFallback();return;}
+   const started=Date.now();let errors=0;
+   const tick=async()=>{if(cancelled)return;try{const results=await detector.detect(video);if(cancelled)return;if(results.length){decoded(results[0].rawValue);return;}}catch{errors++;}
+    if(cancelled)return;if(errors>=2||Date.now()-started>5000){status.textContent='Richt de volledige barcode scherp in beeld. Alternatieve herkenning actief.';await useFallback();return;}timer=setTimeout(tick,250);};tick();
 
-   const tick=async()=>{if(cancelled)return;try{const results=await detector.detect(video);if(cancelled)return;if(results.length){const value=results[0].rawValue;stop();status.textContent='Barcode herkend: '+value;onCode(value);return;}}catch{}if(!cancelled)timer=setTimeout(tick,350);};tick();
   }catch(e){stop();status.textContent=e.name==='NotAllowedError'?'Geen cameratoegang. Geef toestemming in je browser of typ de code.':e.message==='unsupported'?'Deze browser herkent geen ondersteunde productbarcodes. Typ de code.':'Camera niet beschikbaar. Je kunt de barcode ook typen.';}
  });
  const cancel=btn('Stop scannen',()=>{stopCamera();status.textContent='Scannen gestopt.';},'quiet');cancel.hidden=true;
  area.append(start,cancel,video,status);container.append(area);return start;
 }
 const offCache=new Map();let offCalls=[];
+async function lookupBarcode(value){
+ if(!/^\d{8,14}$/.test(value))throw Error('Vul 8 tot 14 cijfers in.');
+ let data=offCache.get(value);
+ if(!data){offCalls=offCalls.filter(t=>Date.now()-t<60000);if(offCalls.length>=10)throw Error('Even wachten: probeer het over een minuut opnieuw.');offCalls.push(Date.now());
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+ try{const response=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(value)+'.json?fields=product_name,product_name_nl,brands,quantity,categories_tags&app_name=BS',{signal:controller.signal});if(response.status===404)return null;if(!response.ok)throw Error('Productdatabase niet bereikbaar.');data=await response.json();offCache.set(value,data);}finally{clearTimeout(timeout);}}
+ const p=data.product;if(!p||!(p.product_name_nl||p.product_name))return null;
+ return {barcode:value,name:p.product_name_nl||p.product_name,brand:p.brands||'',quantity:p.quantity||'',categories:p.categories_tags||[],source:'https://world.openfoodfacts.org/product/'+value};
+}
+function rememberPackage(p,value,proposal){if(!p.barcodes.includes(value))p.barcodes.push(value);if(proposal?.barcode===value){p.packages=p.packages||[];if(!p.packages.some(x=>x.barcode===value))p.packages.push(proposal);}}
+
 function barcodeModal(){
  let code,select,name,category,status,startScan,proposal=null,request=0;
  const inspect=async()=>{
@@ -130,10 +143,10 @@ function barcodeModal(){
   if(!/^\d{8,14}$/.test(value)){status.textContent='Vul 8 tot 14 cijfers in, of koppel de code handmatig.';return;}
   status.textContent='Product opzoeken…';
   try{
-   let data=offCache.get(value);if(!data){offCalls=offCalls.filter(t=>Date.now()-t<60000);if(offCalls.length>=10)throw Error('Even wachten');offCalls.push(Date.now());const response=await fetch('https://world.openfoodfacts.org/api/v3/product/'+encodeURIComponent(value)+'?fields=product_name,product_name_nl,brands,quantity,categories_tags&app_name=BS&app_version=1',{signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error('Niet bereikbaar');data=await response.json();offCache.set(value,data);}
+   const found=await lookupBarcode(value);
    if(token!==request||!$('#modal').open||!code.isConnected||code.value.trim()!==value)return;
-   const p=data.product;if(!p||!(p.product_name_nl||p.product_name)){status.textContent='Niet gevonden. Kies een bestaand product of vul zelf een naam in.';return;}
-   proposal={barcode:value,name:p.product_name_nl||p.product_name,brand:p.brands||'',quantity:p.quantity||'',categories:p.categories_tags||[],source:'https://world.openfoodfacts.org/product/'+value};
+   if(!found){status.textContent='Niet gevonden. Kies een bestaand product of vul zelf een naam in.';return;}
+   proposal=found;
    name.value=proposal.name;status.textContent=[proposal.name,proposal.brand,proposal.quantity].filter(Boolean).join(' · ');
    const tags=proposal.categories.join(' ');const rules=[[/beverages|drinks/,'Drinken'],[/fruits/,'Fruit'],[/vegetables/,'Groenten'],[/meats/,'Vlees'],[/breads|breakfast/,'Brood & Ontbijt'],[/desserts|yogurts/,'Toetjes'],[/sauces/,'Sauzen'],[/pastas/,'Pasta']];
    for(const [pattern,label] of rules){const c=state.categories.find(c=>c.name===label);if(c&&pattern.test(tags)){category.value=c.id;break;}}
@@ -247,25 +260,40 @@ function updatePickedRows(){
 }
 function pickScan(){
  if(!list()?.items.length){toast('Zet eerst producten op je lijst.');return;}
- let code,status,select,start;
- const accept=()=>{
-  const value=code.value.trim();if(!value){status.textContent='Scan of typ een barcode.';return;}
-  let item=list().items.find(i=>!i.done&&prod(i.productId).barcodes.includes(value))||list().items.find(i=>!i.done&&i.id===select.value);
-  if(!item){status.textContent='Kies de bijbehorende openstaande lijstregel. Een al afgevinkt product wordt niet opnieuw toegevoegd.';return;}
-  const p=prod(item.productId),other=state.products.find(p=>p.barcodes.includes(value));if(other&&other.id!==p.id){status.textContent='Deze barcode hoort bij '+other.name+'. Kies de juiste lijstregel.';return;}
-  if(!p.barcodes.includes(value))p.barcodes.push(value);
-  markScannedLine(item,value);
-  if(item.done&&!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
-  save();updatePickedRows();status.textContent=p.name+' · '+item.quantity+' × afgevinkt. Bij de kassa verschijnt de code per stuk.';code.value='';select.value='';for(const option of [...select.options]){if(list().items.find(i=>i.id===option.value)?.done)option.remove();}start.textContent='Scan volgend product';
+ const scanList=list();let code,status,select,start,result,request=0,proposal=null;
+ const options=()=>{select.replaceChildren();const none=el('option','Kies het product op je lijst');none.value='';select.append(none);for(const i of scanList.items.filter(i=>!i.done)){const o=el('option',prod(i.productId).name+' · '+i.quantity+' ×');o.value=i.id;select.append(o);}};
+ const commit=item=>{
+  const value=code.value.trim();if(saveBlocked){status.textContent='Opslaan geblokkeerd. Herstel eerst je opgeslagen gegevens via Beheer.';return;}
+  const p=prod(item.productId),other=state.products.find(p=>p.barcodes.includes(value));
+  if(other&&other.id!==p.id){status.textContent='Deze barcode is al gekoppeld aan '+other.name+'. Pas die koppeling aan via Beheer.';return;}
+  const oldProduct=structuredClone(p),oldItem=structuredClone(item);rememberPackage(p,value,proposal);markScannedLine(item,value);
+  if(!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
+  if(!save()){for(const key of Object.keys(p))delete p[key];Object.assign(p,oldProduct);for(const key of Object.keys(item))delete item[key];Object.assign(item,oldItem);status.textContent='Barcode niet opgeslagen: browseropslag niet beschikbaar. Maak ruimte vrij en probeer opnieuw.';return;}updatePickedRows();status.textContent=p.name+' · '+item.quantity+' × afgevinkt. Barcode '+value+' gekoppeld.';result.replaceChildren();code.value='';proposal=null;request++;options();start.textContent='Scan volgend product';
  };
- openModal('Scan wat je pakt',()=>{
-  $('#modalBody').append(el('p','Richt je camera op de streepjescode van het product. Eén scan streept de hele regel af, inclusief het aantal.','hint'));
-  code=field('Barcode (of handmatig invoeren)','text');code.inputMode='numeric';
-  start=cameraControl($('#modalBody'),value=>{code.value=value;accept();});
-  select=el('select');select.setAttribute('aria-label','Koppel aan lijstregel');const none=el('option','Onbekende barcode? Kies je product');none.value='';select.append(none);for(const i of list().items.filter(i=>!i.done)){const o=el('option',prod(i.productId).name);o.value=i.id;select.append(o);}$('#modalBody').append(select);
-  select.onchange=()=>{if(code.value.trim()&&select.value)accept();};
-  status=el('p','Een onbekende barcode? Kies één keer het bijbehorende product uit je lijst.','hint');status.setAttribute('role','status');$('#modalBody').append(status);
- },()=>{accept();return false;},'Afstrepen');start.textContent='Open camera en scan';start.click();
+ const inspect=async()=>{
+  const value=code.value.trim(),token=++request;proposal=null;result.replaceChildren();select.value='';
+  if(!/^\d{8,14}$/.test(value)){status.textContent='Scan de streepjescode of vul 8 tot 14 cijfers in.';return;}
+  const known=state.products.find(p=>p.barcodes.includes(value));
+  if(known){const item=scanList.items.find(i=>!i.done&&i.productId===known.id);if(item){commit(item);return;}status.textContent=known.name+(scanList.items.some(i=>i.productId===known.id)?' is al afgevinkt.':' staat niet op deze lijst.');return;}
+  status.textContent='Barcode '+value+' herkend. Opzoeken in Open Food Facts…';
+  try{
+   const found=await lookupBarcode(value);if(token!==request||!code.isConnected||!$('#modal').open||code.value.trim()!==value)return;proposal=found;
+   if(!found){status.textContent='Barcode niet gevonden in Open Food Facts. Kies hieronder het product om de code te bewaren en af te strepen.';return;}
+   status.textContent=[found.name,found.brand,found.quantity].filter(Boolean).join(' · ')+' — gevonden in Open Food Facts.';
+   const words=norm(found.name+' '+found.brand).split(/[^\p{L}\p{N}]+/u);
+   const suggestions=scanList.items.filter(i=>!i.done).filter(i=>{const name=norm(prod(i.productId).name);return name===norm(found.name)||name.split(/[^\p{L}\p{N}]+/u).filter(Boolean).every(w=>words.includes(w))||name.split(/[^\p{L}\p{N}]+/u).some(w=>w.length>=5&&words.includes(w));});
+   for(const item of suggestions.slice(0,5))result.append(btn('Koppel aan '+prod(item.productId).name+' & streep af',()=>commit(item)));
+   result.append(el('p','Kies het bijbehorende lijstproduct. De volgende scan van deze barcode werkt automatisch.','hint'));
+  }catch{if(token===request&&code.isConnected)status.textContent='Open Food Facts is nu niet bereikbaar. Kies hieronder zelf het product; de barcode wordt dan ook bewaard.';}
+ };
+ openModal('Scan en streep af',()=>{
+  $('#modalBody').append(el('p','Richt op de streepjescode. Een bekende code streept het volledige aantal af. Een nieuwe code koppel je één keer.','hint'));
+  code=field('Barcode (of handmatig invoeren)','text');code.inputMode='numeric';code.oninput=()=>{request++;proposal=null;result.replaceChildren();select.value='';};
+  start=cameraControl($('#modalBody'),value=>{code.value=value;inspect();});
+  $('#modalBody').append(btn('Barcode opzoeken',inspect));status=el('p','Camera openen…','hint');status.setAttribute('role','status');result=el('div',undefined,'scanMatches');$('#modalBody').append(status,result);
+  const label=el('label','Welk product op je lijst?','field');select=el('select');select.setAttribute('aria-label','Koppel aan lijstregel');label.append(select);$('#modalBody').append(label);options();
+  const source=el('a','Productherkenning: Open Food Facts · ODbL');source.href='https://world.openfoodfacts.org';source.target='_blank';source.rel='noopener';$('#modalBody').append(source,el('p','Alleen de barcode wordt online opgezocht. Koppelingen blijven op dit apparaat bewaard.','hint'));
+ },()=>{if(select.value){const item=scanList.items.find(i=>i.id===select.value&&!i.done);if(!/^\d{8,14}$/.test(code.value.trim())){status.textContent='Scan of vul eerst een geldige barcode in.';return false;}if(item)commit(item);}else inspect();return false;},'Koppelen & afstrepen');start.textContent='Open camera en scan';start.click();
 }
 function loadBarcodeWriter(){
  if(window.JsBarcode)return Promise.resolve();
