@@ -37,3 +37,21 @@ export function validate(data){
  for(const l of data.lists){if(!Array.isArray(l.items))throw Error('Ongeldige lijst.');const itemIds=new Set();for(const i of l.items){if(typeof i.id!=='string'||itemIds.has(i.id)||!ps.has(i.productId)||!Number.isFinite(i.quantity)||i.quantity<=0||typeof i.note!=='string'||typeof i.done!=='boolean')throw Error('Ongeldige lijstregel.');itemIds.add(i.id);}}
  return data;
 }
+
+// Add published catalog once per version; retain local names, barcodes, IDs and lists.
+export function mergeCatalog(current, catalog) {
+ validate(current);validate(catalog);
+ if(current.catalogVersion===catalog.catalogVersion)return current;
+ const next=structuredClone(current), mappings={category:new Map(),product:new Map(),recipe:new Map()},added=new Set();
+ for(const [type,group] of [['category','categories'],['product','products'],['recipe','recipes']]){
+  for(const item of catalog[group]){
+   let match=next[group].find(x=>x.id===item.id)||next[group].find(x=>norm(x.name)===norm(item.name));
+   if(!match){match=structuredClone(item);if(type==='category')match.entries=[];next[group].push(match);added.add(match.id);}
+   mappings[type].set(item.id,match.id);
+  }
+ }
+ for(const p of next.products)if(added.has(p.id))p.categoryId=mappings.category.get(p.categoryId);
+ for(const r of next.recipes)if(added.has(r.id)){r.categoryId=mappings.category.get(r.categoryId);r.ingredients.forEach(i=>i.productId=mappings.product.get(i.productId));}
+ for(const c of catalog.categories){const target=next.categories.find(x=>x.id===mappings.category.get(c.id));for(const e of c.entries){const id=mappings[e.type].get(e.id);if(!target.entries.some(x=>x.type===e.type&&x.id===id))target.entries.push({type:e.type,id});}}
+ next.catalogVersion=catalog.catalogVersion;validate(next);return next;
+}

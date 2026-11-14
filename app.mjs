@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate} from './core.mjs';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='shop',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -51,7 +51,20 @@ function download(name,text){const url=URL.createObjectURL(new Blob([text],{type
 $('#backup').onclick=()=>{if(saveBlocked){download('bs-oorspronkelijke-opslag.json',localStorage.getItem(KEY)||'');return;}download('bs-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(state,null,2));};
 function importFile(mode){const file=$('#file');file.accept=mode==='csv'?'.csv':'.json';file.value='';file.onchange=async()=>{try{const text=await file.files[0].text();if(mode==='csv'){if(state.lists.some(l=>l.items.length))throw Error('Maak eerst een back-up en maak je lijsten leeg voordat je een catalogus vervangt.');const catalog=importOverview(text);if(state.products.length&&!confirm('De bestaande catalogus vervangen?'))return;Object.assign(state,catalog);path=[];}else{const restored=validate(JSON.parse(text));if(!confirm('Je huidige gegevens vervangen door deze back-up?'))return;state=restored;activeList=state.lists[0]?.id;path=[];saveBlocked=false;}save();render();toast('Gegevens ingeladen');}catch(e){toast(e.message);}};file.click();}
 $('#firstImport').onclick=$('#importCsv').onclick=()=>importFile('csv');$('#restore').onclick=()=>importFile('json');
-$('#demo').onclick=()=>{Object.assign(state,importOverview('Home (c);Fruit (c);Ontbijt (c);Gerechten (c)\nFruit (c);Appels (x);Yoghurt;Fruitontbijt (a), Yoghurt, Appels (x), (a)\nOntbijt (c);Bananen (x);Muesli;\nGerechten (c);;;'));save();render();};
+
 function barcodeModal(){let code,select,video;const lookup=()=>{const value=code.value.trim();if(!value)throw Error('Vul een barcode in.');let p=state.products.find(p=>p.barcodes.includes(value));if(!p){p=prod(select.value);if(!p)throw Error('Onbekende barcode: kies een product om te koppelen, of voeg dit eerst toe via Beheren.');p.barcodes.push(value);}ensureList();addItem(list(),p.id);save();render();toast(p.name+' toegevoegd');};openModal('Barcode toevoegen',()=>{code=field('Scan of typ de barcode','text');code.inputMode='numeric';$('#modalBody').append(el('p','Bekende barcodes voegen het product toe. Koppel een onbekende barcode hieronder aan een product. Er wordt geen externe productdatabase geraadpleegd.','hint'));select=el('select');select.setAttribute('aria-label','Product koppelen');const empty=el('option','Kies een product bij een onbekende barcode');empty.value='';select.append(empty);state.products.forEach(p=>{const o=el('option',p.name);o.value=p.id;select.append(o);});$('#modalBody').append(select);video=el('video');video.muted=true;video.playsInline=true;$('#modalBody').append(video);const start=btn('Camera starten',async()=>{if(!('BarcodeDetector'in window)){toast('Deze browser ondersteunt camerascan niet. Typ de barcode of gebruik een externe scanner.');return;}try{const formats=await BarcodeDetector.getSupportedFormats();const detector=new BarcodeDetector({formats:formats.filter(x=>['ean_13','ean_8','upc_a','upc_e','code_128'].includes(x))});let cancelled=false,stream;stopCamera=()=>{cancelled=true;stream?.getTracks().forEach(t=>t.stop());video.srcObject=null;};stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}video.srcObject=stream;await video.play();const tick=async()=>{if(cancelled)return;try{const results=await detector.detect(video);if(results.length){code.value=results[0].rawValue;stopCamera();toast('Barcode herkend. Kies Toevoegen.');return;}}catch{}if(!cancelled)setTimeout(tick,350);};tick();}catch{stopCamera();toast('Camera niet beschikbaar. Je kunt de barcode ook typen.');}});$('#modalBody').append(start);},lookup,'Toevoegen');}
 $('#scan').onclick=barcodeModal;
 render();
+
+async function loadPublishedCatalog(){
+ if(saveBlocked)return;
+ const status=$('#catalogStatus');status.textContent='Catalogus laden…';
+ try{
+  const response=await fetch('./data/catalog.json',{cache:'no-cache'});
+  if(!response.ok)throw Error('Catalogus niet bereikbaar');
+  const catalog=await response.json();state=mergeCatalog(state,catalog);save();render();
+  status.textContent=`${catalog.categories.length} categorieën · ${catalog.products.length} producten · ${catalog.recipes.length} gerechten uit ${catalog.sourceFiles.length} bestanden`;
+ }catch(e){status.textContent='Catalogus niet geladen. Je bestaande gegevens blijven beschikbaar.';$('#retryCatalog').hidden=false;}
+}
+$('#retryCatalog').onclick=loadPublishedCatalog;
+loadPublishedCatalog();
