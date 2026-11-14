@@ -63,3 +63,13 @@ test('shopping-list import appends atomically and preserves existing data',async
  const next=importShoppingList(current,payload);assert.equal(next.lists.length,2);assert.equal(next.products.length,2);assert.equal(next.lists[1].items[0].productId,'p');assert.equal(next.lists[1].items[0].quantity,6);assert.deepEqual(next.products[0].barcodes,['123']);assert.deepEqual(next.beepProfiles,current.beepProfiles);assert.equal(current.lists.length,1);
  payload.items[1].quantity=-1;assert.throws(()=>importShoppingList(current,payload));assert.equal(current.products.length,1);
 });
+
+test('unified import accepts CSV and original JSON and keeps existing lists',async()=>{
+ const {importListFile}=await import('./core.mjs');const s={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:'existing',name:'Bestaand',items:[]}]};
+ const j={format:'bs-shopping-list',version:1,name:'Jumbo',items:[{name:'Melk',category:'Drinken',quantity:6,note:'test'}]};
+ for(const text of [JSON.stringify(j),'Product;Aantal;Categorie;Notitie\nMelk;6;Drinken;test','name,quantity,category,note\nMelk,6,Drinken,test']){const next=importListFile(s,text,'Jumbo.csv');assert.equal(next.lists.length,2);assert.equal(next.lists[1].items[0].quantity,6);assert.equal(next.products[0].name,'Melk');}
+ assert.equal(importListFile(s,'Naam;Aantal;Notitie\nAppels;1,5;"rood; groen"').lists[1].items[0].quantity,1.5);
+ assert.equal(importListFile(s,'Melk\nBrood').lists[1].items.length,2);
+ assert.throws(()=>importListFile(s,'Product;Aantal\nMelk;fout'));assert.equal(s.lists.length,1);
+ const old=importListFile(s,'Home (c);Drinken (c)\nDrinken (c);Melk');assert.equal(old.lists.length,1);assert.equal(old.products[0].name,'Melk');
+});

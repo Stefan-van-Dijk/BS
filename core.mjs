@@ -121,3 +121,20 @@ export function importShoppingList(current,payload){
  }
  next.lists.push(list);next.activeListId=list.id;return validate(next);
 }
+
+export function importListFile(current,text,filename='Boodschappen'){
+ text=text.replace(/^\uFEFF/,'').trim();if(!text)throw Error('Het bestand is leeg.');
+ if(/^[{[]/.test(text))return importShoppingList(current,JSON.parse(text));
+ const first=text.split(/\r?\n/)[0],delimiter=csv(first,';')[0].length>csv(first,',')[0].length?';':',';
+ const rows=csv(text,delimiter).filter(r=>r.some(v=>v.trim()));
+ if(rows[0].some(h=>h.includes('(c)'))){
+  const catalog={schemaVersion:1,...importOverview(text),lists:[],catalogVersion:uid()};
+  const next=mergeCatalog(current,catalog);next.catalogVersion=current.catalogVersion;removeCategoryCycles(next.categories);return next;
+ }
+ const headers=rows[0].map(norm),find=names=>headers.findIndex(h=>names.includes(h));
+ const ni=find(['product','naam','name','artikel']),qi=find(['aantal','quantity','hoeveelheid']),ci=find(['categorie','category']),ti=find(['notitie','note','opmerking']);
+ if(ni<0&&rows.some(r=>r.length>1))throw Error('CSV vereist een kolom Product of Naam; optioneel Aantal, Categorie en Notitie.');
+ const data=ni>=0?rows.slice(1):rows;
+ const items=data.map(r=>({name:(r[ni>=0?ni:0]||'').trim(),quantity:qi<0||!r[qi]?.trim()?1:Number(r[qi].trim().replace(',','.')),category:ci<0?'Overig':r[ci]?.trim()||'Overig',note:ti<0?'':r[ti]||''}));
+ return importShoppingList(current,{format:'bs-shopping-list',version:1,name:filename.replace(/\.(csv|json)$/i,'')||'Boodschappen',items});
+}
