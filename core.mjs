@@ -70,3 +70,35 @@ export function removeCategoryCycles(categories){
  function visit(c){if(done.has(c.id))return;active.add(c.id);c.entries=c.entries.filter(e=>{if(e.type!=='category')return true;if(active.has(e.id)){removed++;return false;}const child=byId.get(e.id);if(child)visit(child);return true;});active.delete(c.id);done.add(c.id);}
  const home=categories.find(c=>c.name==='Home');if(home)visit(home);categories.forEach(visit);return removed;
 }
+
+// One event per bounded tone, after the tone ends; sustained sounds cannot repeat.
+export function createBeepGate(){
+ let start=null,lastTone=0,frequency=0,blockedUntil=0;
+ return (now,tone,hz=0)=>{
+  if(now<blockedUntil)return null;
+  if(tone){if(start===null){start=now;frequency=hz;}lastTone=now;return null;}
+  if(start===null||now-lastTone<120)return null;
+  const duration=lastTone-start;start=null;
+  if(duration<60||duration>650)return null;
+  blockedUntil=now+1200;return {frequency,duration};
+ };
+}
+export function barcodeFormat(code){
+ if(!/^\d+$/.test(code))return null;
+ const formats={8:'EAN8',12:'UPC',13:'EAN13'};if(!formats[code.length])return null;
+ let sum=0;for(let i=code.length-2,weight=3;i>=0;i--,weight=weight===3?1:3)sum+=Number(code[i])*weight;
+ return (10-sum%10)%10===Number(code.at(-1))?formats[code.length]:null;
+}
+
+// Explicit store names work without GPS and can later be mapped to Sharon IDs.
+export function findBeepProfile(profiles,chain,location=''){
+ const valid=(Array.isArray(profiles)?profiles:[]).filter(p=>p&&Number.isFinite(p.frequency)&&p.frequency>=700&&p.frequency<=6000&&norm(p.chain)===norm(chain));
+ return (location.trim()&&valid.find(p=>norm(p.location||'')===norm(location)))||valid.find(p=>!p.location)||null;
+}
+export function saveBeepProfile(profiles,chain,location,tone){
+ chain=chain.trim();location=location.trim();if(!chain)throw Error('Vul eerst de winkelketen in.');
+ if(!Number.isFinite(tone.frequency)||tone.frequency<700||tone.frequency>6000)throw Error('Ongeldige pieptoon.');
+ const existing=profiles.find(p=>norm(p.chain)===norm(chain)&&norm(p.location||'')===norm(location));
+ const profile={id:existing?.id||uid(),chain,location,frequency:tone.frequency,duration:tone.duration,minPurity:.45,uncorrected:0,corrections:0,updatedAt:new Date().toISOString()};
+ if(existing)Object.assign(existing,profile);else profiles.push(profile);return existing||profile;
+}

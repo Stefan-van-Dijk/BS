@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles} from './core.mjs?v=20261114-swipe1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile} from './core.mjs?v=20261114-boards1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='favorites',productCategory='';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -10,8 +10,8 @@ function btn(text,fn,cls='secondary'){const b=el('button',text,cls);b.type='butt
 function field(label,type,value=''){const l=el('label',label,'field'),input=el('input');input.type=type;input.value=value;l.append(input);$('#modalBody').append(l);return input;}
 function categoryField(value){const l=el('label','Categorie','field'),s=el('select');for(const c of state.categories.filter(c=>c.name!=='Home')){const o=el('option',c.name);o.value=c.id;s.append(o);}s.value=value||s.options[0]?.value||'';l.append(s);$('#modalBody').append(l);return s;}
 function openModal(title,build,onSubmit,action='Bewaren'){$('#modalTitle').textContent=title;$('#modalBody').replaceChildren();$('#modalSave').textContent=action;build();$('#modalForm').onsubmit=e=>{e.preventDefault();try{if(onSubmit()!==false)closeModal();}catch(err){toast(err.message);}};$('#modal').showModal();}
-function closeModal(){stopCamera();$('#modal').close();}
-$('#closeModal').onclick=closeModal;$('#modal').addEventListener('close',()=>stopCamera());$('#modal').addEventListener('cancel',()=>stopCamera());
+function closeModal(){stopDeck();stopCamera();$('#modal').close();}
+$('#closeModal').onclick=closeModal;$('#modal').addEventListener('close',()=>{stopCamera();stopDeck();});$('#modal').addEventListener('cancel',()=>{stopCamera();stopDeck();});
 function switchView(v){view=v;for(const id of ['home','lists','manage'])$('#'+id).hidden=id!==v;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));render();}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 function render(){
@@ -55,7 +55,7 @@ function chooseRecipe(r){let checks=[];openModal(r.name,()=>{if(!r.ingredients.l
  r.ingredients.forEach(i=>{const l=el('label',undefined,'checkrow'),c=el('input');c.type='checkbox';c.checked=true;l.append(c,el('span',`${i.quantity} × ${prod(i.productId)?.name}${i.note?' · '+i.note:''}`));$('#modalBody').append(l);checks.push([c,i]);});},()=>{ensureList();let n=0;checks.forEach(([c,i])=>{if(c.checked){addItem(list(),i.productId,i.quantity,i.note);n++;}});save();render();toast(n+' ingrediënten toegevoegd');},'Selectie toevoegen');}
 function renderList(target=$('#listRows'),neededOnly=false){target.replaceChildren();const l=list();$('#progress').textContent=l?`${l.items.filter(i=>i.done).length} van ${l.items.length} afgevinkt`: 'Maak een lijst om te beginnen.';if(!l?.items.length){$('#shoppingProgress').textContent='0 / 0';target.append(el('p','Nog niets op je lijst. Voeg producten toe bij Verzamelen.','empty'));return;}
  const groups=new Map();$('#shoppingProgress').textContent=l.items.filter(i=>i.done).length+' / '+l.items.length;if(neededOnly&&l.items.every(i=>i.done)){target.append(el('p','Alles in de tas. Goed geregeld!','empty success'));return;}for(const item of l.items.filter(i=>!neededOnly||!i.done)){const name=cat(prod(item.productId)?.categoryId)?.name||'Overig';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
- for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');const setDone=value=>{i.done=value;check.checked=value;row.classList.toggle('done',value);if(value&&!i.purchaseRecorded){i.purchaseRecorded=true;const p=prod(i.productId);p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}save();renderContext();$('#progress').textContent=`${l.items.filter(item=>item.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(item=>item.done).length+' / '+l.items.length;};check.onchange=()=>setDone(check.checked);const text=btn('',()=>chooseProduct(prod(i.productId),i),'text');text.setAttribute('aria-label',prod(i.productId).name+' aantal of notitie aanpassen');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);hold(text,()=>chooseProduct(prod(i.productId),i));text.tabIndex=0;text.title='Tik voor aantal en notitie; swipe om af te vinken of terug te zetten';text.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();editProduct(prod(i.productId));}};swipeAction(row,()=>setDone(!i.done));target.append(row);});}
+ for(const [name,items]of groups){target.append(el('h3',name,'sectionLabel'));items.forEach(i=>{const row=el('div',undefined,'row'+(i.done?' done':'')),check=el('input');row.dataset.listItem=i.id;check.type='checkbox';check.checked=i.done;check.setAttribute('aria-label',prod(i.productId).name+' afvinken');const setDone=value=>{i.done=value;check.checked=value;row.classList.toggle('done',value);if(value&&!i.purchaseRecorded){i.purchaseRecorded=true;const p=prod(i.productId);p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}save();renderContext();$('#progress').textContent=`${l.items.filter(item=>item.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(item=>item.done).length+' / '+l.items.length;};check.onchange=()=>setDone(check.checked);const text=btn('',()=>chooseProduct(prod(i.productId),i),'text');text.setAttribute('aria-label',prod(i.productId).name+' aantal of notitie aanpassen');text.append(el('strong',prod(i.productId).name));if(i.note)text.append(el('small',i.note));const qty=el('input');qty.type='number';qty.min='.01';qty.step='any';qty.value=i.quantity;qty.setAttribute('aria-label','Aantal '+prod(i.productId).name);qty.onchange=()=>{const v=Number(qty.value);if(v>0&&Number.isFinite(v)){i.quantity=v;save();}else{qty.value=i.quantity;toast('Vul een positief aantal in.');}};row.append(check,text,qty,btn('✕',()=>{l.items=l.items.filter(x=>x.id!==i.id);save();render();},'quiet'));row.lastChild.setAttribute('aria-label','Verwijder '+prod(i.productId).name);hold(text,()=>chooseProduct(prod(i.productId),i));text.tabIndex=0;text.title='Tik voor aantal en notitie; swipe om af te vinken of terug te zetten';text.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();editProduct(prod(i.productId));}};swipeAction(row,()=>setDone(!i.done));target.append(row);});}
 }
 $('#manageSearch').oninput=renderManage;$('#listSelect').onchange=e=>{activeList=e.target.value;save();render();};
 $('#newList').onclick=()=>{let name;openModal('Nieuwe lijst',()=>name=field('Naam','text'),()=>{if(!name.value.trim())throw Error('Geef de lijst een naam.');const l={id:uid(),name:name.value.trim(),items:[]};state.lists.push(l);activeList=l.id;save();render();});};
@@ -239,3 +239,118 @@ $('#quickForm').onsubmit=e=>{
  p={id:uid(),name,categoryId:c.id,barcodes:[],input:'plain'};state.products.push(p);c.entries.push({type:'product',id:p.id});}
  quickAdd(p);$('#quickName').value='';render();toast(p.name+' op '+list().name);
 };
+
+let stopDeck=()=>{};
+function updatePickedRows(){
+ const l=list();if(!l)return;
+ for(const row of document.querySelectorAll('[data-list-item]')){const item=l.items.find(i=>i.id===row.dataset.listItem);if(item){row.classList.toggle('done',item.done);row.querySelector('input[type=checkbox]').checked=item.done;}}
+ renderContext();$('#progress').textContent=`${l.items.filter(i=>i.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(i=>i.done).length+' / '+l.items.length;
+}
+function pickScan(){
+ if(!list()?.items.length){toast('Zet eerst producten op je lijst.');return;}
+ let code,status,select,start;
+ const accept=()=>{
+  const value=code.value.trim();if(!value){status.textContent='Scan of typ een barcode.';return;}
+  let item=list().items.find(i=>!i.done&&prod(i.productId).barcodes.includes(value))||list().items.find(i=>!i.done&&i.id===select.value);
+  if(!item){status.textContent='Kies de bijbehorende openstaande lijstregel. Een al afgevinkt product wordt niet opnieuw toegevoegd.';return;}
+  if(!Number.isInteger(item.quantity)){status.textContent='Deze hoeveelheid is geen aantal stuks. Vink dit product handmatig af.';return;}
+  const p=prod(item.productId),other=state.products.find(p=>p.barcodes.includes(value));if(other&&other.id!==p.id){status.textContent='Deze barcode hoort bij '+other.name+'. Kies de juiste lijstregel.';return;}
+  if(!p.barcodes.includes(value))p.barcodes.push(value);
+  item.scannedCodes=Array.isArray(item.scannedCodes)?item.scannedCodes:[];
+  if(item.scannedCodes.length>=item.quantity){status.textContent='Alle stuks zijn al gescand.';return;}
+  item.scannedCodes.push(value);item.done=item.scannedCodes.length===item.quantity;
+  if(item.done&&!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
+  save();updatePickedRows();status.textContent=p.name+' · '+item.scannedCodes.length+' van '+item.quantity+' gepakt. Kies Scan barcode voor het volgende product.';code.value='';select.value='';
+ };
+ openModal('Scan wat je pakt',()=>{
+  code=field('Barcode','text');code.inputMode='numeric';
+  start=cameraControl($('#modalBody'),value=>{code.value=value;accept();});
+  select=el('select');select.setAttribute('aria-label','Koppel aan lijstregel');const none=el('option','Onbekende barcode? Kies je product');none.value='';select.append(none);for(const i of list().items.filter(i=>!i.done)){const o=el('option',prod(i.productId).name);o.value=i.id;select.append(o);}$('#modalBody').append(select);
+  status=el('p','Eén scan telt als één stuk. De regels blijven op hun plek.','hint');status.setAttribute('role','status');$('#modalBody').append(status);
+ },()=>{accept();return false;},'Dit stuk registreren');start.click();
+}
+function loadBarcodeWriter(){
+ if(window.JsBarcode)return Promise.resolve();
+ return new Promise((resolve,reject)=>{const script=el('script');script.src='./vendor/jsbarcode-3.12.1.min.js';script.onload=resolve;script.onerror=()=>{script.remove();reject(Error('Barcodeweergave niet geladen'));};document.head.append(script);});
+}
+async function checkoutBoards(){
+ const items=list()?.items.filter(i=>i.done)||[];if(!items.length){toast('Scan of vink eerst de producten af die je hebt gepakt.');return;}
+ try{await loadBarcodeWriter();}catch(e){toast(e.message);return;}
+ const cards=[];
+ for(const i of items){
+  if(!Number.isInteger(i.quantity)||i.quantity>200){cards.push({item:i,product:prod(i.productId),issue:'Controleer dit artikel apart bij de kassa: hoeveelheid is geen ondersteund aantal stuks.'});continue;}
+  for(let n=0;n<i.quantity;n++){const p=prod(i.productId);cards.push({item:i,product:p,n:n+1,code:i.scannedCodes?.[n]||(p.barcodes.length===1?p.barcodes[0]:null)});}
+ }
+ let index=0,alive=true,stream,context,tick,revision=0,gate=createBeepGate(),profile=null,learning=false,listening=false,pending=null,autoMoves=new Map(),feedbackTimer,corrections=0,uncorrected=0,minPurity=.45,readyAt=0;
+ let board,status,audioStatus,listen,learn,confirmTone,prev,next,feedback,chainInput,locationInput,scopeInput,profileStatus;
+ const profiles=Array.isArray(state.beepProfiles)?state.beepProfiles:(state.beepProfiles=[]);
+ let savedProfile=null,candidate=null;
+ const persistFeedback=()=>{if(savedProfile){Object.assign(savedProfile,{minPurity,corrections,uncorrected,updatedAt:new Date().toISOString()});save();}};
+ const selectProfile=()=>{
+  settle();stopMic();autoMoves.clear();pending=null;clearTimeout(feedbackTimer);candidate=null;confirmTone.hidden=true;
+  state.checkoutStore={chain:chainInput.value.trim(),location:locationInput.value.trim()};save();
+  savedProfile=findBeepProfile(profiles,chainInput.value,locationInput.value);profile=savedProfile;
+  minPurity=savedProfile?.minPurity||.45;corrections=savedProfile?.corrections||0;uncorrected=savedProfile?.uncorrected||0;
+  profileStatus.textContent=savedProfile?'Opgeslagen piep: '+savedProfile.chain+(savedProfile.location?' · '+savedProfile.location:' · alle vestigingen'):'Nog geen opgeslagen piep voor deze winkel.';
+  audioStatus.textContent=savedProfile?'Profiel geladen. Druk op Luisteren naar piep.':'Leer de kassapiep en bevestig hem om hem te bewaren.';feedbackText();
+ };
+ const stopMic=()=>{revision++;clearInterval(tick);stream?.getTracks().forEach(t=>t.stop());stream=null;context?.close().catch(()=>{});context=null;listening=false;learning=false;if(listen)listen.textContent='Luisteren naar piep';};
+ const cleanup=()=>{alive=false;stopMic();clearTimeout(feedbackTimer);document.removeEventListener('visibilitychange',hide);$('#modal').classList.remove('checkoutModal');stopDeck=()=>{};};
+ const hide=()=>{if(document.hidden){stopMic();audioStatus.textContent='Luisteren gepauzeerd omdat de app niet in beeld is.';}};
+ const feedbackText=()=>{feedback.textContent=uncorrected+' piepen zonder terug-swipe · '+corrections+' correcties. Dit meet bediening, geen kassaregistratie.';};
+ const settle=()=>{if(pending){uncorrected++;pending.counted=true;pending=null;persistFeedback();feedbackText();}};
+ const draw=()=>{
+  board.replaceChildren();prev.disabled=index===0;next.disabled=index>=cards.length;
+  if(index>=cards.length){board.append(el('h2','Alle kaarten getoond.'),el('p','Controleer producten en aantallen op het kassascherm voordat je betaalt.'));status.textContent='Einde van de reeks';stopMic();return;}
+  const card=cards[index];status.textContent='Kaart '+(index+1)+' van '+cards.length;board.append(el('p','STUK '+(card.n||1)+' VAN '+card.item.quantity,'eyebrow'),el('h2',card.product.name));
+  const format=barcodeFormat(card.code||'');
+  if(format){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('role','img');svg.setAttribute('aria-label','Barcode '+card.code);board.append(svg);window.JsBarcode(svg,card.code,{format,width:3,height:115,margin:24,displayValue:true,fontSize:20,background:'#fff',lineColor:'#000'});}
+  else{board.append(el('p',card.issue||'Geen eenduidige, geldige EAN/UPC-barcode. Scan het artikel zelf bij de kassa.','barcodeIssue'));}
+  if(!card.code&&card.product.barcodes.length>1){const select=el('select');select.setAttribute('aria-label','Kies de verpakking');const blank=el('option','Kies de exacte verpakking');blank.value='';select.append(blank);card.product.barcodes.forEach(code=>{const o=el('option',code);o.value=code;select.append(o);});select.onchange=()=>{card.code=select.value;draw();};board.append(select);}
+  readyAt=performance.now()+1200;
+ };
+ const move=(direction,automatic=false)=>{
+  if(direction<0&&index===0||direction>0&&index>=cards.length)return;
+  if(direction<0&&autoMoves.has(index)){const record=autoMoves.get(index);if(record.counted)uncorrected=Math.max(0,uncorrected-1);autoMoves.delete(index);corrections++;minPurity=Math.min(.8,minPurity+.04);persistFeedback();if(pending===record){pending=null;clearTimeout(feedbackTimer);}audioStatus.textContent='Correctie onthouden. Herkenning is iets strenger gezet.';}
+  else if(direction>0)settle();
+  index+=direction;index=Math.max(0,Math.min(cards.length,index));
+  if(automatic){pending={index,counted:false};autoMoves.set(index,pending);clearTimeout(feedbackTimer);feedbackTimer=setTimeout(settle,5000);audioStatus.textContent='Piep gehoord → volgende kaart. Swipe terug als dit te vroeg was.';}
+  feedbackText();draw();
+ };
+ const startMic=async(calibrate=false)=>{
+  stopMic();const token=revision;learning=calibrate;
+  try{
+   if(!navigator.mediaDevices?.getUserMedia)throw Error('Microfoon niet ondersteund');
+   const Audio=window.AudioContext||window.webkitAudioContext;context=new Audio();await context.resume();
+   const incoming=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+   if(!alive||token!==revision){incoming.getTracks().forEach(t=>t.stop());return;}
+   stream=incoming;const analyser=context.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0;context.createMediaStreamSource(stream).connect(analyser);
+   const data=new Float32Array(analyser.frequencyBinCount),bin=context.sampleRate/analyser.fftSize;gate=createBeepGate();listening=true;listen.textContent='Luisteren pauzeren';audioStatus.textContent=calibrate?'Laat één kassapiep horen. De kaarten blijven nog staan.':'Luistert lokaal naar de bevestigde pieptoon.';
+   tick=setInterval(()=>{
+    if(!alive||document.hidden)return;analyser.getFloatFrequencyData(data);let peak=-Infinity,k=0,total=0;
+    for(let j=Math.ceil(700/bin);j<Math.min(data.length,Math.floor(6000/bin));j++){const power=10**(data[j]/10);total+=power;if(data[j]>peak){peak=data[j];k=j;}}
+    let band=0;for(let j=Math.max(0,k-2);j<=Math.min(data.length-1,k+2);j++)band+=10**(data[j]/10);
+    const frequency=k*bin,purity=total?band/total:0,match=!profile||Math.abs(frequency-profile.frequency)<Math.max(150,profile.frequency*.12);
+    const event=gate(performance.now(),peak>-45&&purity>=minPurity&&(learning||match),frequency);
+    if(!event)return;
+    if(learning){candidate=event;stopMic();confirmTone.hidden=false;audioStatus.textContent='Piep gevonden rond '+Math.round(event.frequency)+' Hz. Was dit jouw kassapiep?';return;}
+    if(performance.now()>=readyAt&&index<cards.length&&barcodeFormat(cards[index].code||''))move(1,true);
+   },30);
+  }catch(e){if(token!==revision||!alive)return;stopMic();audioStatus.textContent='Microfoon niet beschikbaar of toestemming geweigerd. Swipen en knoppen blijven werken.';}
+ };
+ openModal('Barcodes bij de kassa',()=>{
+  $('#modal').classList.add('checkoutModal');$('#modalBody').append(el('p','Experimentele luisterstand. Controleer de registratie op de kassa. Geluid blijft op je telefoon en wordt niet opgenomen.','hint'));
+  status=el('p',undefined,'deckCounter');status.setAttribute('role','status');board=el('div',undefined,'barcodeBoard');board.tabIndex=0;board.setAttribute('aria-label','Barcodekaart. Swipe links voor volgende, rechts voor vorige.');
+  let start=null;board.onpointerdown=e=>{if(e.target.closest('select')||!e.isPrimary)return;start=[e.clientX,e.clientY];board.setPointerCapture(e.pointerId);};board.onpointerup=e=>{if(start){const dx=e.clientX-start[0],dy=e.clientY-start[1];if(Math.abs(dx)>60&&Math.abs(dy)<45)move(dx<0?1:-1);}start=null;};board.onpointercancel=()=>start=null;board.onkeydown=e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();move(e.key==='ArrowRight'?1:-1);}};
+  const nav=el('div',undefined,'deckNav');prev=btn('← Vorige',()=>move(-1));next=btn('Volgende →',()=>move(1));nav.append(prev,next);
+  const controls=el('div',undefined,'toolbar');learn=btn('Kassapiep leren',()=>{if(!chainInput.value.trim()){audioStatus.textContent='Vul eerst de winkelketen in.';return;}if(scopeInput.value==='location'&&!locationInput.value.trim()){audioStatus.textContent='Vul eerst de vestiging in.';return;}confirmTone.hidden=true;startMic(true);},'secondary');listen=btn('Luisteren naar piep',()=>{if(listening){stopMic();audioStatus.textContent='Luisteren gepauzeerd.';}else if(!profile){audioStatus.textContent='Leer eerst de piep van jouw kassa.';}else startMic();},'secondary');confirmTone=btn('Dit is de juiste piep',()=>{if(!candidate)return;settle();savedProfile=saveBeepProfile(profiles,chainInput.value,scopeInput.value==='location'?locationInput.value:'',candidate);save();selectProfile();startMic();});confirmTone.hidden=true;controls.append(learn,listen,confirmTone);
+  audioStatus=el('p','Leer eerst de kassapiep, of swipe handmatig door de kaarten.','hint');audioStatus.setAttribute('role','status');feedback=el('p',undefined,'hint');const settings=el('details');settings.append(el('summary','Winkel en piepprofiel'));
+  const makeInput=(label,value,choices)=>{const wrap=el('label',label,'field'),input=el('input'),dl=el('datalist');input.value=value;dl.id=uid();input.setAttribute('list',dl.id);[...new Set(choices)].filter(Boolean).forEach(name=>{const o=el('option');o.value=name;dl.append(o);});wrap.append(input,dl);settings.append(wrap);input.onchange=selectProfile;return input;};
+  chainInput=makeInput('Winkelketen',state.checkoutStore?.chain||'Jumbo',profiles.map(p=>p.chain));
+  locationInput=makeInput('Vestiging (optioneel)',state.checkoutStore?.location||'',profiles.map(p=>p.location));
+  const scopeLabel=el('label','Nieuwe piep bewaren voor','field');scopeInput=el('select');[['chain','De hele winkelketen'],['location','Alleen deze vestiging']].forEach(([value,label])=>{const o=el('option',label);o.value=value;scopeInput.append(o);});scopeLabel.append(scopeInput);settings.append(scopeLabel);
+  profileStatus=el('p',undefined,'hint');$('#modalBody').append(settings,profileStatus,status,board,nav,controls,audioStatus,feedback);selectProfile();draw();
+ },()=>{},'Sluiten');stopDeck=cleanup;document.addEventListener('visibilitychange',hide);
+}
+$('#pickScan').onclick=pickScan;
+$('#checkoutBoards').onclick=checkoutBoards;
