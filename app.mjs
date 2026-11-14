@@ -1,10 +1,11 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-extra1';
+import {connectSharon,snapshot,installSnapshot} from './sharon.mjs?v=20261114-shoplist1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-shoplist1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='mylist',productCategory='',homeFilter='needed';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
 removeCategoryCycles(state.categories);const expanded=new Set();activeList=state.lists.find(l=>l.id===state.activeListId)?.id||state.lists[0]?.id;let timer;
 function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('#toast').style.display='none',3600);}
-function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return false;}try{localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';return true;}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');return false;}}
+function save(){state.activeListId=activeList;removeCategoryCycles(state.categories);if(saveBlocked){toast('Opslaan geblokkeerd: herstel eerst een geldige back-up.');return false;}try{markCloudChanges();state.activeListId=activeList;localStorage.setItem(KEY,JSON.stringify(state));$('#saveStatus').textContent='Lokaal bewaard in deze browser';return true;}catch{$('#saveStatus').textContent='Opslaan mislukt — maak nu een back-up.';toast('Opslag vol of niet beschikbaar. Maak een back-up.');return false;}}
 const list=()=>state.lists.find(l=>l.id===activeList),prod=id=>state.products.find(p=>p.id===id),cat=id=>state.categories.find(c=>c.id===id);
 function btn(text,fn,cls='secondary'){const b=el('button',text,cls);b.type='button';b.onclick=fn;return b;}
 function field(label,type,value=''){const l=el('label',label,'field'),input=el('input');input.type=type;input.value=value;l.append(input);$('#modalBody').append(l);return input;}
@@ -131,7 +132,7 @@ async function lookupBarcode(value){
  let data=offCache.get(value);
  if(!data){offCalls=offCalls.filter(t=>Date.now()-t<60000);if(offCalls.length>=10)throw Error('Even wachten: probeer het over een minuut opnieuw.');offCalls.push(Date.now());
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
- try{const response=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(value)+'.json?fields=product_name,product_name_nl,brands,quantity,categories_tags&app_name=BS',{signal:controller.signal});if(response.status===404)return null;if(!response.ok)throw Error('Productdatabase niet bereikbaar.');data=await response.json();offCache.set(value,data);}finally{clearTimeout(timeout);}}
+ try{const response=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(value)+'.json?fields=product_name,product_name_nl,brands,quantity,categories_tags&app_name=ShopList',{signal:controller.signal});if(response.status===404)return null;if(!response.ok)throw Error('Productdatabase niet bereikbaar.');data=await response.json();offCache.set(value,data);}finally{clearTimeout(timeout);}}
  const p=data.product;if(!p||!(p.product_name_nl||p.product_name))return null;
  return {barcode:value,name:p.product_name_nl||p.product_name,brand:p.brands||'',quantity:p.quantity||'',categories:p.categories_tags||[],source:'https://world.openfoodfacts.org/product/'+value};
 }
@@ -270,7 +271,7 @@ function pickScan(){
  const commit=item=>{
   const value=code.value.trim();if(saveBlocked){status.textContent='Opslaan geblokkeerd. Herstel eerst je opgeslagen gegevens via Beheer.';return;}
   const p=prod(item.productId),other=state.products.find(p=>p.barcodes.includes(value));
-  if(other&&other.id!==p.id){status.textContent='Deze barcode is al gekoppeld aan '+other.name+'. Pas die koppeling aan via Beheer.';return;}
+  if(other&&other.id!==p.id&&!p.barcodes.includes(value)){status.textContent='Deze barcode is al gekoppeld aan '+other.name+'. Pas die koppeling aan via Beheer.';return;}
   const oldProduct=structuredClone(p),oldItem=structuredClone(item);rememberPackage(p,value,proposal);markScannedLine(item,value);
   if(!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
   if(!save()){for(const key of Object.keys(p))delete p[key];Object.assign(p,oldProduct);for(const key of Object.keys(item))delete item[key];Object.assign(item,oldItem);status.textContent='Barcode niet opgeslagen: browseropslag niet beschikbaar. Maak ruimte vrij en probeer opnieuw.';return;}updatePickedRows();status.textContent=p.name+' · '+item.quantity+' × afgevinkt. Barcode '+value+' gekoppeld.';result.replaceChildren();code.value='';proposal=null;request++;options();start.textContent='Scan volgend product';
@@ -311,7 +312,7 @@ function pickScan(){
  const inspect=async()=>{
   const value=code.value.trim(),token=++request;proposal=null;result.replaceChildren();select.value='';
   if(!/^\d{8,14}$/.test(value)){status.textContent='Scan de streepjescode of vul 8 tot 14 cijfers in.';return;}
-  const known=state.products.find(p=>p.barcodes.includes(value));
+  const known=state.products.find(p=>p.barcodes.includes(value)&&scanList.items.some(i=>i.productId===p.id&&!i.done))||state.products.find(p=>p.barcodes.includes(value));
   if(known){const item=scanList.items.find(i=>!i.done&&i.productId===known.id);if(item){commit(item);return;}status.textContent=known.name+(scanList.items.some(i=>i.productId===known.id)?' is al afgevinkt.':' staat niet op deze lijst.');offerExtra(known);return;}
   status.textContent='Barcode '+value+' herkend. Opzoeken in Open Food Facts…';
   try{
@@ -445,3 +446,68 @@ function reviewSimilarProducts(){
  const draw=()=>{const pair=pairs[position];if(!pair){info.textContent='Geen verdere vergelijkbare producten gevonden.';name.hidden=true;skip.hidden=true;$('#modalSave').textContent='Sluiten';return;}const a=prod(pair.a),b=prod(pair.b);info.textContent=a.name+'  ↔  '+b.name;name.hidden=false;name.value=pair.name;$('#modalSave').textContent='Samenvoegen';};
  openModal('Vergelijkbare producten',()=>{info=el('p');$('#modalBody').append(info,el('p','Controleer of dit hetzelfde product is. Barcodes, oude zoeknamen en lijstverwijzingen blijven bewaard.','hint'));name=field('Gezamenlijke productnaam','text');skip=btn('Apart houden',()=>{const pair=pairs[position];state.ignoredProductPairs=state.ignoredProductPairs||[];state.ignoredProductPairs.push([pair.a,pair.b].sort().join('|'));save();position++;draw();});$('#modalBody').append(skip);draw();},()=>{const pair=pairs[position];if(!pair)return;mergeProductVariants(state,[pair.a,pair.b],name.value);save();render();closeModal();reviewSimilarProducts();return false;},'Samenvoegen');
 }
+
+let cloudBusy=false;
+function markCloudChanges(){
+ for(const l of state.lists){if(!l.cloud)continue;const payload=snapshot(state,l),json=JSON.stringify(payload);if(l.cloud.role==='read'){if(json!==l.cloud.base){const oldId=l.id;l.id=uid();l.name+=' (eigen kopie)';delete l.cloud;if(activeList===oldId)activeList=l.id;toast('Alleen leesrechten: je wijziging is als eigen kopie bewaard.');}continue;}if(json!==l.cloud.base&&json!==l.cloud.pending?.json)l.cloud.pending={json,operation:crypto.randomUUID()};}
+}
+async function syncCloud(){
+ if(cloudBusy||saveBlocked||document.hidden)return;cloudBusy=true;let syncingList;
+ try{
+  const linked=state.lists.filter(l=>l.cloud);if(!linked.length)return;
+  const api=await connectSharon();
+  for(const l of linked){
+   syncingList=l;
+   if(l.cloud.conflict)continue;
+   const pending=l.cloud.pending;
+   if(pending){
+    const response=await api.write(JSON.parse(pending.json),l.cloud.revision,pending.operation);
+    l.cloud.revision=response.list.revision;l.cloud.base=pending.json;
+    if(l.cloud.pending===pending)delete l.cloud.pending;
+    localStorage.setItem(KEY,JSON.stringify(state));
+   }else if(!$('#modal').open){
+    const response=await api.read(l.id);l.cloud.role=response.role;
+    if(response.list.revision!==l.cloud.revision){
+     const payload=response.list.payload;
+     validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});
+     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});
+     localStorage.setItem(KEY,JSON.stringify(state));render();
+    }
+   }
+  }
+  $('#saveStatus').textContent=linked.some(l=>l.cloud.pending||l.cloud.conflict)?'Lokaal bewaard · wijzigingen wachten':'Bijgewerkt via Sharon';
+ }catch(error){if(syncingList?.cloud&&/gedeelde lijst is gewijzigd|geen toegang|alleen bekijken/.test(error.message)){syncingList.cloud.conflict=true;localStorage.setItem(KEY,JSON.stringify(state));}$('#saveStatus').textContent='Lokaal bewaard · synchronisatie wacht';}
+ finally{cloudBusy=false;}
+}
+async function openSharonLists(){
+ try{
+  const api=await connectSharon(),remote=await api.index();
+  const requested=new URLSearchParams(location.search).get('shoplist');
+  if(requested&&remote.lists.some(row=>row.id===requested)){
+   const existing=state.lists.find(l=>l.id===requested);
+   if(existing){activeList=requested;render();await syncCloud();}
+   else{const response=await api.read(requested),payload=response.list.payload;validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});activeList=requested;save();render();}
+   history.replaceState(history.state,'',location.pathname);return;
+  }
+  openModal('ShopList · Sharon',()=>{
+   $('#modalBody').append(el('p','Deelrechten beheer je in Sharon. Bij een versieconflict blijft je lokale wijziging bewaard.','hint'));
+   const current=list();
+   if(current&&!current.cloud)$('#modalBody').append(btn('Deze lijst verbinden',async()=>{
+    try{const payload=snapshot(state,current);const response=await api.write(payload,0,crypto.randomUUID(),true);current.cloud={revision:response.list.revision,role:'owner',base:JSON.stringify(payload)};save();closeModal();toast('Lijst verbonden met Sharon');}catch(e){toast(e.message);}
+   }));
+   for(const row of remote.lists)$('#modalBody').append(btn(row.name+' · openen / online versie ophalen',async()=>{
+    try{
+     const existing=state.lists.find(l=>l.id===row.id);const response=await api.read(row.id),payload=response.list.payload;
+     validate({schemaVersion:1,...payload,recipes:[],lists:[payload.list]});
+     if(existing&&JSON.stringify(snapshot(state,existing))!==JSON.stringify(payload)){const copy=structuredClone(existing);copy.id=uid();copy.name+=' (lokale wijzigingen)';delete copy.cloud;state.lists.push(copy);}
+     installSnapshot(state,payload,{revision:response.list.revision,role:response.role,base:JSON.stringify(payload)});activeList=row.id;save();closeModal();render();
+    }catch(e){toast(e.message);}
+   }));
+   const link=el('a','Delen en toegang beheren in Sharon');link.href='https://stefan-van-dijk.github.io/sharon/';$('#modalBody').append(link);
+  },()=>true,'Sluiten');
+ }catch(e){toast('Verbinding nog niet beschikbaar: '+e.message);}
+}
+$('#sharonLists').onclick=openSharonLists;
+setInterval(syncCloud,15000);
+window.addEventListener('online',syncCloud);
+if(new URLSearchParams(location.search).has('shoplist'))openSharonLists();
