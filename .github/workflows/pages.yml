@@ -26,6 +26,7 @@ jobs:
           mkdir -p public
           cp index.html style.css app.mjs core.mjs public/
           cp -r data public/data
+          cp -r vendor public/vendor
           touch public/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
