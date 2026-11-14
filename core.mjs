@@ -55,3 +55,12 @@ export function mergeCatalog(current, catalog) {
  for(const c of catalog.categories){const target=next.categories.find(x=>x.id===mappings.category.get(c.id));for(const e of c.entries){const id=mappings[e.type].get(e.id);if(!target.entries.some(x=>x.type===e.type&&x.id===id))target.entries.push({type:e.type,id});}}
  next.catalogVersion=catalog.catalogVersion;validate(next);return next;
 }
+
+export function productQuantity(list, productId){return (list?.items||[]).filter(i=>i.productId===productId&&!i.done).reduce((sum,i)=>sum+i.quantity,0);}
+export function decreaseProduct(list,productId){
+ if(!list)return;
+ const item=[...list.items].reverse().find(i=>i.productId===productId&&!i.done);
+ if(!item)return;
+ if(item.quantity>1)item.quantity=Math.round((item.quantity-1)*1e9)/1e9;
+ else list.items=list.items.filter(i=>i.id!==item.id);
+}

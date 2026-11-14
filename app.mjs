@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog} from './core.mjs?v=20261113-scanner2';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct} from './core.mjs?v=20261113-lines1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='shop',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -22,21 +22,30 @@ function render(){
 function renderShop(){const q=norm($('#search').value),cards=$('#cards'),crumbs=$('#crumbs');cards.replaceChildren();crumbs.replaceChildren();
  crumbs.append(btn('Alle categorieën',()=>{path=[];render();},'quiet'));path.forEach((id,i)=>crumbs.append(btn(cat(id)?.name||'',()=>{path=path.slice(0,i+1);render();},'quiet')));
  let entries;if(q)entries=[...state.products.filter(p=>norm(p.name).includes(q)).map(p=>({type:'product',id:p.id})),...state.recipes.filter(r=>norm(r.name).includes(q)).map(r=>({type:'recipe',id:r.id}))];else if(path.length)entries=cat(path.at(-1))?.entries||[];else{const home=state.categories.find(c=>c.name==='Home');entries=home?home.entries:state.categories.map(c=>({type:'category',id:c.id}));}
- for(const item of entries){const obj=item.type==='product'?prod(item.id):item.type==='category'?cat(item.id):state.recipes.find(r=>r.id===item.id);if(!obj)continue;const card=btn('',()=>{if(item.type==='category'){path.push(obj.id);$('#search').value='';render();}else if(item.type==='recipe')chooseRecipe(obj);else quickAdd(obj);},'card '+item.type);card.append(el('span',item.type==='category'?'Categorie':item.type==='recipe'?'Gerecht':'Product','tag'),el('strong',obj.name),el('span',item.type==='category'?'Bekijk producten →':item.type==='recipe'?`${obj.ingredients.length} ingrediënten · kiezen →`:'Toevoegen +','action'));if(item.type==='product'){
- const wrap=el('div',undefined,'productWrap');
- card.setAttribute('aria-label',obj.name+' toevoegen');
- hold(card,()=>chooseProduct(obj));
- const edit=btn('⋯',()=>chooseProduct(obj),'productOptions');edit.setAttribute('aria-label','Aantal en notitie voor '+obj.name);
- wrap.append(card,edit);cards.append(wrap);
- }else cards.append(card);}
+ for(const item of entries){
+ const obj=item.type==='product'?prod(item.id):item.type==='category'?cat(item.id):state.recipes.find(r=>r.id===item.id);if(!obj)continue;
+ if(item.type==='product'){
+  const row=el('div',undefined,'productLine');row.dataset.productId=obj.id;
+  const minus=btn('−',()=>{decreaseProduct(list(),obj.id);save();refreshQuantities();},'step minus');minus.setAttribute('aria-label',obj.name+' verminderen');
+  const main=btn(obj.name,()=>quickAdd(obj),'productName');main.setAttribute('aria-label',obj.name+' toevoegen');main.title='Lang indrukken om product te bewerken';hold(main,()=>editProduct(obj));
+  const qty=el('output',undefined,'productQuantity');qty.setAttribute('aria-label','Aantal '+obj.name);qty.setAttribute('aria-live','polite');
+  const plus=btn('+',()=>quickAdd(obj),'step plus');plus.setAttribute('aria-label',obj.name+' verhogen');plus.title='Lang indrukken om product te bewerken';hold(plus,()=>editProduct(obj));
+  main.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();editProduct(obj);}};
+  row.append(minus,main,qty,plus);cards.append(row);
+ }else{
+  const row=btn('',()=>{if(item.type==='category'){path.push(obj.id);$('#search').value='';render();}else chooseRecipe(obj);},'browseLine');
+  row.append(el('span',obj.name),el('small',item.type==='recipe'?obj.ingredients.length+' ingrediënten':''),el('span','›','chevron'));cards.append(row);
+ }
+ }
+ refreshQuantities();
  if(!entries.length)cards.append(el('p',q?'Geen resultaten. Voeg een product toe via Beheren.':'Laad je overzicht om te beginnen.','empty'));
 }
 function ensureList(){if(!list()){const l={id:uid(),name:'Boodschappen',items:[]};state.lists.push(l);activeList=l.id;}}
-function quickAdd(p){
- if(p.input==='note'||p.input==='amount'){chooseProduct(p);return;}
- ensureList();addItem(list(),p.id);save();$('#count').textContent=list().items.filter(i=>!i.done).length;
- toast(p.name+' toegevoegd aan '+list().name);
+function refreshQuantities(){
+ document.querySelectorAll('.productLine').forEach(row=>{const amount=productQuantity(list(),row.dataset.productId);row.querySelector('output').textContent=new Intl.NumberFormat('nl-NL',{maximumFractionDigits:3}).format(amount);row.querySelector('.minus').disabled=amount<=0;row.classList.toggle('selected',amount>0);});
+ $('#count').textContent=list()?.items.filter(i=>!i.done).length||0;
 }
+function quickAdd(p){ensureList();addItem(list(),p.id);save();refreshQuantities();}
 function hold(element,action){
  let timer,start,suppress=false;
  const cancel=()=>{clearTimeout(timer);timer=null;};
@@ -88,7 +97,7 @@ $('#firstImport').onclick=$('#importCsv').onclick=()=>importFile('csv');$('#rest
 function inputPills(value){
  const result={value},group=el('fieldset',undefined,'inputPills');group.append(el('legend','Bij toevoegen'));
  const help=el('p',undefined,'hint');help.id='inputModeHelp';
- const choices=[['plain','Standaard','Direct één product toevoegen.'],['amount','Aantal','Eerst het gewenste aantal invullen.'],['note','Omschrijving','Eerst een omschrijving of variant invullen.']];
+ const choices=[['plain','Standaard','Direct één product toevoegen.'],['amount','Aantal','Aantalproduct. Gebruik + en − om direct het aantal te wijzigen.'],['note','Omschrijving','Product met omschrijving. Houd ingedrukt om het product te bewerken.']];
  for(const [key,label,hint] of choices){const l=el('label'),radio=el('input');radio.type='radio';radio.name='productInput';radio.value=key;radio.checked=key===value;radio.setAttribute('aria-describedby','inputModeHelp');radio.onchange=()=>{result.value=key;help.textContent=hint;};l.append(radio,el('span',label));group.append(l);if(radio.checked)help.textContent=hint;}
  $('#modalBody').append(group,help);return result;
 }
