@@ -55,3 +55,11 @@ test('one shopping scan checks the entire line and preserves six checkout codes'
  markScannedLine(item,'3274080005003');assert.equal(item.done,true);assert.equal(item.quantity,6);assert.deepEqual(item.scannedCodes,Array(6).fill('3274080005003'));
  item.done=false;markScannedLine(item,'96385074');assert.deepEqual(item.scannedCodes,Array(6).fill('96385074'));
 });
+
+test('shopping-list import appends atomically and preserves existing data',async()=>{
+ const {importShoppingList}=await import('./core.mjs');
+ const current={schemaVersion:1,categories:[{id:'cat',name:'Drinken',entries:[{type:'product',id:'p'}]}],products:[{id:'p',name:'Melk',categoryId:'cat',barcodes:['123']}],recipes:[],lists:[{id:'l',name:'Bestaand',items:[]}],beepProfiles:[{chain:'Jumbo',frequency:2000}]};
+ const payload={format:'bs-shopping-list',version:1,name:'Nieuw',items:[{name:'melk',category:'Drinken',quantity:6,note:'test'},{name:'Ui',category:'Groenten',quantity:1,note:''}]};
+ const next=importShoppingList(current,payload);assert.equal(next.lists.length,2);assert.equal(next.products.length,2);assert.equal(next.lists[1].items[0].productId,'p');assert.equal(next.lists[1].items[0].quantity,6);assert.deepEqual(next.products[0].barcodes,['123']);assert.deepEqual(next.beepProfiles,current.beepProfiles);assert.equal(current.lists.length,1);
+ payload.items[1].quantity=-1;assert.throws(()=>importShoppingList(current,payload));assert.equal(current.products.length,1);
+});

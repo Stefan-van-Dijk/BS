@@ -109,3 +109,15 @@ export function markScannedLine(item,barcode){
  item.scannedCodes=Number.isInteger(item.quantity)&&item.quantity<=200?Array(item.quantity).fill(barcode):[];
  item.checkoutBarcode=barcode;
 }
+
+export function importShoppingList(current,payload){
+ if(payload?.format!=='bs-shopping-list'||payload.version!==1||typeof payload.name!=='string'||!payload.name.trim()||!Array.isArray(payload.items)||!payload.items.length||payload.items.length>2000)throw Error('Ongeldig boodschappenlijstbestand.');
+ for(const i of payload.items)if(!i||typeof i.name!=='string'||!i.name.trim()||!Number.isFinite(i.quantity)||i.quantity<=0||typeof i.note!=='string'||typeof i.category!=='string')throw Error('Ongeldige productregel in boodschappenlijst.');
+ const next=structuredClone(current),list={id:uid(),name:payload.name.trim(),items:[],notes:typeof payload.notes==='string'?payload.notes:''};
+ for(const i of payload.items){
+  let p=next.products.find(p=>norm(p.name)===norm(i.name));
+  if(!p){let c=next.categories.find(c=>norm(c.name)===norm(i.category||'Overig'));if(!c){c={id:uid(),name:i.category.trim()||'Overig',entries:[]};next.categories.push(c);}p={id:uid(),name:i.name.trim(),categoryId:c.id,barcodes:[],input:'plain'};next.products.push(p);c.entries.push({type:'product',id:p.id});}
+  list.items.push({id:uid(),productId:p.id,quantity:i.quantity,note:i.note,done:false});
+ }
+ next.lists.push(list);next.activeListId=list.id;return validate(next);
+}
