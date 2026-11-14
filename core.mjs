@@ -172,3 +172,10 @@ export function similarProductPairs(products){
  }
  return pairs.sort((a,b)=>b.score-a.score);
 }
+
+export function addPickedExtra(list,productId,quantity,barcode){
+ if(!Number.isInteger(quantity)||quantity<1||quantity>200)throw Error('Aantal moet 1 tot 200 zijn.');
+ if(!/^\d{8,14}$/.test(barcode))throw Error('Ongeldige barcode.');
+ const item={id:uid(),productId,quantity,note:'',done:false,purchaseRecorded:true};
+ markScannedLine(item,barcode);list.items.push(item);return item;
+}

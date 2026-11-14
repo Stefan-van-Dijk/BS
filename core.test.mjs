@@ -84,3 +84,15 @@ test('general duplicate suggestions cover brands and typos without merging data'
  const {similarProductPairs}=await import('./core.mjs');const products=[{id:'a',name:'Volkoren beschuit Jumbo',categoryId:'c'},{id:'b',name:'Volkoren beschuit Bolletje',categoryId:'c'},{id:'c',name:'Paprika',categoryId:'v'},{id:'d',name:'Paprka',categoryId:'v'},{id:'e',name:'Melk',categoryId:'d'},{id:'f',name:'Koffiemelk',categoryId:'d'}];
  const pairs=similarProductPairs(products);assert.ok(pairs.some(p=>p.a==='a'&&p.b==='b'));assert.ok(pairs.some(p=>p.a==='c'&&p.b==='d'));assert.ok(!pairs.some(p=>p.a==='e'&&p.b==='f'));assert.equal(products.length,6);
 });
+
+test('Extra scanned purchases preserve planned items and retain one checkout code per unit',async()=>{
+ const {addPickedExtra}=await import('./core.mjs');
+ const planned={id:'planned',productId:'milk',quantity:2,done:false,note:'keep'};
+ const list={items:[planned]};const extra=addPickedExtra(list,'milk',6,'3017620422003');
+ assert.equal(extra.done,true);assert.equal(extra.quantity,6);assert.deepEqual(extra.scannedCodes,Array(6).fill('3017620422003'));
+ assert.equal(planned.done,false);assert.equal(planned.quantity,2);assert.equal(planned.note,'keep');
+ addPickedExtra(list,'milk',1,'3017620422003');assert.equal(list.items.length,3);
+ const empty={items:[]};addPickedExtra(empty,'new',1,'12345678');assert.equal(empty.items[0].done,true);
+ for(const q of [0,-1,1.5,201,NaN])assert.throws(()=>addPickedExtra(empty,'new',q,'12345678'));
+ assert.throws(()=>addPickedExtra(empty,'new',1,''));assert.equal(empty.items.length,1);
+});

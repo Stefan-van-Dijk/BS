@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-general1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-extra1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='mylist',productCategory='',homeFilter='needed';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -264,7 +264,7 @@ function updatePickedRows(){
  renderContext();$('#progress').textContent=`${l.items.filter(i=>i.done).length} van ${l.items.length} afgevinkt`;$('#shoppingProgress').textContent=l.items.filter(i=>i.done).length+' / '+l.items.length;
 }
 function pickScan(){
- if(!list()?.items.length){toast('Zet eerst producten op je lijst.');return;}
+ ensureList();
  const scanList=list();let code,status,select,start,result,request=0,proposal=null;
  const options=()=>{select.replaceChildren();const none=el('option','Kies het product op je lijst');none.value='';select.append(none);for(const i of scanList.items.filter(i=>!i.done)){const o=el('option',prod(i.productId).name+' · '+i.quantity+' ×');o.value=i.id;select.append(o);}};
  const commit=item=>{
@@ -275,21 +275,54 @@ function pickScan(){
   if(!item.purchaseRecorded){item.purchaseRecorded=true;p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();}
   if(!save()){for(const key of Object.keys(p))delete p[key];Object.assign(p,oldProduct);for(const key of Object.keys(item))delete item[key];Object.assign(item,oldItem);status.textContent='Barcode niet opgeslagen: browseropslag niet beschikbaar. Maak ruimte vrij en probeer opnieuw.';return;}updatePickedRows();status.textContent=p.name+' · '+item.quantity+' × afgevinkt. Barcode '+value+' gekoppeld.';result.replaceChildren();code.value='';proposal=null;request++;options();start.textContent='Scan volgend product';
  };
+ const offerExtra=known=>{
+  const value=code.value.trim(),packageInfo=proposal;
+  const panel=el('div');result.append(panel);
+  panel.append(btn('Extra product meenemen',()=>{
+   panel.replaceChildren();
+   const input=(title,type,value)=>{const label=el('label',title,'field'),node=el('input');node.type=type;node.value=value;label.append(node);panel.append(label);return node;};
+   let target,name,category;
+   if(known)panel.append(el('p',known.name));
+   else{
+    const label=el('label','Product','field');target=el('select');const empty=el('option','Nieuw product');empty.value='';target.append(empty);
+    for(const p of state.products.slice().sort((a,b)=>a.name.localeCompare(b.name,'nl'))){const o=el('option',p.name);o.value=p.id;target.append(o);}label.append(target);panel.append(label);
+    name=input('Naam','text',packageInfo?.name||'');
+    const cl=el('label','Categorie','field');category=el('select');for(const c of state.categories.filter(c=>c.name!=='Home')){const o=el('option',c.name);o.value=c.id;category.append(o);}cl.append(category);panel.append(cl);
+    target.onchange=()=>{name.disabled=category.disabled=!!target.value;};
+   }
+   const quantity=input('Aantal extra stuks','number',1);quantity.min='1';quantity.max='200';quantity.step='1';
+   panel.append(btn('Toevoegen als gepakt',()=>{
+    if(code.value.trim()!==value)return;
+    if(saveBlocked){status.textContent='Opslaan geblokkeerd. Herstel eerst je gegevens via Beheer.';return;}
+    const count=Number(quantity.value);if(!Number.isInteger(count)||count<1||count>200){status.textContent='Kies een heel aantal van 1 tot 200.';return;}
+    let p=prod(known?.id)||prod(target?.value);
+    if(!p&&!name.value.trim()){status.textContent='Vul een productnaam in.';name.focus();return;}
+    if(!p)p=state.products.find(x=>norm(x.name)===norm(name.value.trim()));
+    if(!p&&!category?.value){status.textContent='Maak eerst een categorie via Beheer.';return;}
+    const before=structuredClone({products:state.products,categories:state.categories,items:scanList.items});
+    if(!p){p={id:uid(),name:name.value.trim(),categoryId:category.value,barcodes:[],input:'plain'};state.products.push(p);cat(category.value).entries.push({type:'product',id:p.id});}
+    rememberPackage(p,value,packageInfo);addPickedExtra(scanList,p.id,count,value);
+    p.purchaseCount=(p.purchaseCount||0)+1;p.lastPurchased=Date.now();
+    if(!save()){state.products=before.products;state.categories=before.categories;scanList.items=before.items;status.textContent='Niet opgeslagen. Maak ruimte vrij en probeer opnieuw.';return;}
+    render();status.textContent=p.name+' · '+count+' × extra meegenomen en opgeslagen.';result.replaceChildren();code.value='';proposal=null;request++;options();start.textContent='Scan volgend product';
+   }));
+  }));
+ };
  const inspect=async()=>{
   const value=code.value.trim(),token=++request;proposal=null;result.replaceChildren();select.value='';
   if(!/^\d{8,14}$/.test(value)){status.textContent='Scan de streepjescode of vul 8 tot 14 cijfers in.';return;}
   const known=state.products.find(p=>p.barcodes.includes(value));
-  if(known){const item=scanList.items.find(i=>!i.done&&i.productId===known.id);if(item){commit(item);return;}status.textContent=known.name+(scanList.items.some(i=>i.productId===known.id)?' is al afgevinkt.':' staat niet op deze lijst.');return;}
+  if(known){const item=scanList.items.find(i=>!i.done&&i.productId===known.id);if(item){commit(item);return;}status.textContent=known.name+(scanList.items.some(i=>i.productId===known.id)?' is al afgevinkt.':' staat niet op deze lijst.');offerExtra(known);return;}
   status.textContent='Barcode '+value+' herkend. Opzoeken in Open Food Facts…';
   try{
    const found=await lookupBarcode(value);if(token!==request||!code.isConnected||!$('#modal').open||code.value.trim()!==value)return;proposal=found;
-   if(!found){status.textContent='Barcode niet gevonden in Open Food Facts. Kies hieronder het product om de code te bewaren en af te strepen.';return;}
+   if(!found){status.textContent='Barcode niet gevonden in Open Food Facts. Kies hieronder het product om de code te bewaren en af te strepen, of voeg een extra product toe.';offerExtra();return;}
    status.textContent=[found.name,found.brand,found.quantity].filter(Boolean).join(' · ')+' — gevonden in Open Food Facts.';
    const words=norm(found.name+' '+found.brand).split(/[^\p{L}\p{N}]+/u);
    const suggestions=scanList.items.filter(i=>!i.done).filter(i=>{const name=norm(prod(i.productId).name);return name===norm(found.name)||name.split(/[^\p{L}\p{N}]+/u).filter(Boolean).every(w=>words.includes(w))||name.split(/[^\p{L}\p{N}]+/u).some(w=>w.length>=5&&words.includes(w));});
    for(const item of suggestions.slice(0,5))result.append(btn('Koppel aan '+prod(item.productId).name+' & streep af',()=>commit(item)));
-   result.append(el('p','Kies het bijbehorende lijstproduct. De volgende scan van deze barcode werkt automatisch.','hint'));
-  }catch{if(token===request&&code.isConnected)status.textContent='Open Food Facts is nu niet bereikbaar. Kies hieronder zelf het product; de barcode wordt dan ook bewaard.';}
+   result.append(el('p','Kies het bijbehorende lijstproduct. De volgende scan van deze barcode werkt automatisch.','hint'));offerExtra();
+  }catch{if(token===request&&code.isConnected&&code.value.trim()===value){status.textContent='Open Food Facts is nu niet bereikbaar. Koppel een lijstproduct of voeg zelf een extra product toe.';offerExtra();}}
  };
  openModal('Scan en streep af',()=>{
   $('#modalBody').append(el('p','Richt op de streepjescode. Een bekende code streept het volledige aantal af. Een nieuwe code koppel je één keer.','hint'));
