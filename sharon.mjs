@@ -4,8 +4,8 @@ export async function connectSharon(){
  if(location.origin!=='https://stefan-van-dijk.github.io')throw Error('Open ShopList en Sharon op hun GitHub Pages-adres om dezelfde identiteit te gebruiken.');
  if(!service){
   const [{ObjectStore},{ShopListService}]=await Promise.all([
-   import('/sharon/src/core/storage/ObjectStore.js?v=0.4.74'),
-   import('/sharon/src/core/shoplist/ShopListService.js?v=0.4.74')]);
+   import('/sharon/src/core/storage/ObjectStore.js?v=0.4.75'),
+   import('/sharon/src/core/shoplist/ShopListService.js?v=0.4.75')]);
   service=new ShopListService(await new ObjectStore().open());
  }
  return service;
