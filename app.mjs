@@ -1,4 +1,4 @@
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,importShoppingList,importListFile} from './core.mjs?v=20261114-importboth1';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,importShoppingList,importListFile} from './core.mjs?v=20261114-codesonly1';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let homeSection='products',productCategory='';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
 try{const raw=localStorage.getItem(KEY);if(raw)state=validate(JSON.parse(raw));}catch{saveBlocked=true;$('#saveStatus').textContent='Opgeslagen gegevens konden niet worden gelezen. Exporteer eerst je oorspronkelijke back-up.';}
@@ -304,9 +304,11 @@ async function checkoutBoards(){
  try{await loadBarcodeWriter();}catch(e){toast(e.message);return;}
  const cards=[];
  for(const i of items){
+  const product=prod(i.productId);if(!product||![...(product.barcodes||[]),...(i.scannedCodes||[])].some(code=>typeof code==='string'&&code.trim()))continue;
   if(!Number.isInteger(i.quantity)||i.quantity>200){cards.push({item:i,product:prod(i.productId),issue:'Controleer dit artikel apart bij de kassa: hoeveelheid is geen ondersteund aantal stuks.'});continue;}
-  for(let n=0;n<i.quantity;n++){const p=prod(i.productId);cards.push({item:i,product:p,n:n+1,code:i.scannedCodes?.[n]||(p.barcodes.length===1?p.barcodes[0]:null)});}
+  for(let n=0;n<i.quantity;n++){const p=prod(i.productId),code=i.scannedCodes?.[n]||(p.barcodes.length===1?p.barcodes[0]:null);if(!code&&!p.barcodes.some(value=>value.trim()))continue;cards.push({item:i,product:p,n:n+1,code});}
  }
+ if(!cards.length){toast('Geen barcodes beschikbaar voor de afgevinkte producten.');return;}
  let index=0,alive=true,stream,context,tick,revision=0,gate=createBeepGate(),profile=null,learning=false,listening=false,pending=null,autoMoves=new Map(),feedbackTimer,corrections=0,uncorrected=0,minPurity=.45,readyAt=0;
  let board,status,audioStatus,listen,learn,confirmTone,prev,next,feedback,chainInput,locationInput,scopeInput,profileStatus;
  const profiles=Array.isArray(state.beepProfiles)?state.beepProfiles:(state.beepProfiles=[]);
