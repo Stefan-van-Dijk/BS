@@ -1,3 +1,4 @@
+import {publicCatalog} from './public-catalog.mjs';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {importOverview,norm,csv,validate} from '../core.mjs';
@@ -30,6 +31,6 @@ const ids=new Map();for(const group of ['categories','products','recipes'])for(c
 for(const c of catalog.categories){c.id=ids.get(c.id);c.entries=c.entries.map(e=>({...e,id:ids.get(e.id)}));}
 for(const p of catalog.products){p.id=ids.get(p.id);p.categoryId=ids.get(p.categoryId);}
 for(const r of catalog.recipes){r.id=ids.get(r.id);r.categoryId=ids.get(r.categoryId);r.ingredients.forEach(i=>i.productId=ids.get(i.productId));}
-const output={schemaVersion:1,catalogVersion:'2026-11-13-1',...catalog,lists:[],sourceFiles:sources};validate(output);
+const output=publicCatalog({schemaVersion:1,...catalog,catalogVersion:'2026-11-14-public-2',lists:[],sourceFiles:sources});validate(output);
 writeFileSync(new URL('../data/catalog.json',import.meta.url),JSON.stringify(output,null,2)+'\n');
 console.log(JSON.stringify({categories:catalog.categories.length,products:catalog.products.length,recipes:catalog.recipes.length,sources:sources.length}));
