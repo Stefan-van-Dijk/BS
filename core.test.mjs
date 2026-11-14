@@ -22,3 +22,30 @@ test('Backups preserve favorites, package links and reusable activities',()=>{
  assert.equal(restored.products[0].favorite,true);assert.equal(restored.products[0].packages[0].quantity,'1 l');assert.equal(restored.recipes[0].kind,'activity');
  addItem(restored.lists[0],restored.recipes[0].ingredients[0].productId,2,'Voor ontbijt');assert.equal(restored.lists[0].items[0].productId,'p');assert.equal(restored.recipes[0].ingredients[0].quantity,2);
 });
+
+test('Beep gate rejects short clicks and sustained sounds, and debounces a beep',async()=>{
+ const {createBeepGate}=await import('./core.mjs');const gate=createBeepGate();
+ assert.equal(gate(0,true,2400),null);assert.equal(gate(20,true,2400),null);assert.equal(gate(150,false),null);
+ gate(200,true,2400);gate(300,true,2400);assert.deepEqual(gate(430,false),{frequency:2400,duration:100});
+ assert.equal(gate(500,true,2400),null);assert.equal(gate(700,false),null);
+ gate(2000,true,2400);gate(3000,true,2400);assert.equal(gate(3150,false),null);
+ gate(4000,true,2400);gate(4100,true,2400);assert.equal(gate(4230,false).frequency,2400);
+});
+test('Barcode output validates check digits and preserves leading zeroes',async()=>{
+ const {barcodeFormat}=await import('./core.mjs');assert.equal(barcodeFormat('3274080005003'),'EAN13');assert.equal(barcodeFormat('012345678905'),'UPC');assert.equal(barcodeFormat('96385074'),'EAN8');assert.equal(barcodeFormat('3274080005004'),null);assert.equal(barcodeFormat('123'),null);assert.equal(barcodeFormat('abc'),null);
+});
+
+
+test('beep profiles are shared across lists, with location priority and chain fallback',async()=>{
+ const {findBeepProfile,saveBeepProfile}=await import('./core.mjs');const profiles=[];
+ const chain=saveBeepProfile(profiles,'Jumbo','',{frequency:2000,duration:100});
+ const local=saveBeepProfile(profiles,'Jumbo','Zwolle Centrum',{frequency:3000,duration:120});
+ assert.equal(findBeepProfile(profiles,' jumbo ','ZWOLLE CENTRUM'),local);
+ assert.equal(findBeepProfile(profiles,'Jumbo','Andere winkel'),chain);
+ assert.equal(findBeepProfile(profiles,'AH',''),null);
+ const id=local.id;saveBeepProfile(profiles,'Jumbo','Zwolle Centrum',{frequency:3100,duration:130});
+ assert.equal(profiles.length,2);assert.equal(local.id,id);assert.equal(local.frequency,3100);
+ const restored=JSON.parse(JSON.stringify({lists:[{id:'a'},{id:'b'}],beepProfiles:profiles}));
+ assert.equal(findBeepProfile(restored.beepProfiles,'Jumbo','').frequency,2000);
+ assert.throws(()=>saveBeepProfile(profiles,'','',{frequency:2000}));
+});
