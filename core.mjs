@@ -138,3 +138,25 @@ export function importListFile(current,text,filename='Boodschappen'){
  const items=data.map(r=>({name:(r[ni>=0?ni:0]||'').trim(),quantity:qi<0||!r[qi]?.trim()?1:Number(r[qi].trim().replace(',','.')),category:ci<0?'Overig':r[ci]?.trim()||'Overig',note:ti<0?'':r[ti]||''}));
  return importShoppingList(current,{format:'bs-shopping-list',version:1,name:filename.replace(/\.(csv|json)$/i,'')||'Boodschappen',items});
 }
+
+const searchText=s=>norm(s).normalize('NFD').replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+export function fuzzyMatch(text,query){
+ const source=searchText(text),q=searchText(query);if(!q||source.includes(q))return true;
+ const words=source.split(' ');
+ const distance=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>Array.from({length:b.length+1},(_,j)=>i?j?0:i:j));for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++){d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1])d[i][j]=Math.min(d[i][j],d[i-2][j-2]+1);}return d[a.length][b.length];};
+ return q.split(' ').every(token=>words.some(word=>word.startsWith(token)||(token.length>=4&&Math.abs(token.length-word.length)<=2&&distance(token,word)<=(token.length>=7?2:1))));
+}
+export function compactProductVariants(state){
+ // Explicitly equivalent variants only: never fuzzy-merge distinct foods or quantities.
+ const variants=state.products.filter(p=>/^beschuit volkoren(?: bolletje| jumbo)?$/i.test(p.name.trim()));
+ if(!variants.length||(variants.length===1&&variants[0].name==='Beschuit volkoren'))return;
+ const target=variants.find(p=>norm(p.name)==='beschuit volkoren')||variants[0],ids=new Set(variants.map(p=>p.id));
+ target.aliases=[...new Set(variants.flatMap(p=>[p.name,...(p.aliases||[])]))];
+ target.variants=[...(target.variants||[]),...variants.filter(p=>!(target.variants||[]).some(v=>v.id===p.id)).map(p=>structuredClone(p))];
+ target.barcodes=[...new Set(variants.flatMap(p=>p.barcodes))];target.packages=variants.flatMap(p=>p.packages||[]).filter((p,i,a)=>a.findIndex(x=>x.barcode===p.barcode)===i);
+ target.favorite=variants.some(p=>p.favorite);target.purchaseCount=variants.reduce((n,p)=>n+(p.purchaseCount||0),0);target.name='Beschuit volkoren';
+ for(const l of state.lists)for(const i of l.items)if(ids.has(i.productId))i.productId=target.id;
+ for(const r of state.recipes)for(const i of r.ingredients)if(ids.has(i.productId))i.productId=target.id;
+ for(const c of state.categories)c.entries=c.entries.map(e=>e.type==='product'&&ids.has(e.id)?{...e,id:target.id}:e).filter((e,i,a)=>a.findIndex(x=>x.type===e.type&&x.id===e.id)===i);
+ state.products=state.products.filter(p=>!ids.has(p.id)||p.id===target.id);
+}

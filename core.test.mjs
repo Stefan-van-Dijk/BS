@@ -73,3 +73,10 @@ test('unified import accepts CSV and original JSON and keeps existing lists',asy
  assert.throws(()=>importListFile(s,'Product;Aantal\nMelk;fout'));assert.equal(s.lists.length,1);
  const old=importListFile(s,'Home (c);Drinken (c)\nDrinken (c);Melk');assert.equal(old.lists.length,1);assert.equal(old.products[0].name,'Melk');
 });
+
+test('fuzzy search handles typos, transpositions and accents without broad short matches',async()=>{
+ const {fuzzyMatch}=await import('./core.mjs');assert.ok(fuzzyMatch('Rode paprika','paprka'));assert.ok(fuzzyMatch('Beschuit volkoren','beschuit volkroen'));assert.ok(fuzzyMatch('Crème fraîche','creme'));assert.ok(fuzzyMatch('Melk','mel'));assert.equal(fuzzyMatch('Melk','mes'),false);assert.equal(fuzzyMatch('Paprika','bananen'),false);
+});
+test('known variants preserve barcodes, aliases and all list/recipe references',async()=>{
+ const {compactProductVariants,validate}=await import('./core.mjs');const s={schemaVersion:1,categories:[{id:'c',name:'Ontbijt',entries:[{type:'product',id:'a'},{type:'product',id:'b'}]}],products:[{id:'a',name:'Beschuit Volkoren Bolletje',categoryId:'c',barcodes:['111'],purchaseCount:2},{id:'b',name:'Beschuit Volkoren Jumbo',categoryId:'c',barcodes:['222'],purchaseCount:3}],recipes:[{id:'r',name:'Ontbijt',categoryId:'c',ingredients:[{productId:'b',quantity:2,note:''}]}],lists:[{id:'l',name:'Lijst',items:[{id:'i',productId:'b',quantity:6,note:'Jumbo',done:false}]}]};compactProductVariants(s);validate(s);assert.equal(s.products.length,1);assert.equal(s.products[0].name,'Beschuit volkoren');assert.deepEqual(s.products[0].barcodes,['111','222']);assert.equal(s.lists[0].items[0].quantity,6);assert.equal(s.lists[0].items[0].productId,'a');assert.equal(s.recipes[0].ingredients[0].productId,'a');const before=JSON.stringify(s);compactProductVariants(s);assert.equal(JSON.stringify(s),before);
+});

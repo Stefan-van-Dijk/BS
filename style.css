@@ -6,3 +6,5 @@
 .listQuantity{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}#pickScan{flex:1;min-height:52px}#listRows .row .text{min-height:44px}
 
 .productSort{display:inline-flex;gap:3px;padding:3px;border-radius:24px;background:#eae4da;margin:0 0 12px}.productSort button{min-height:36px;border-radius:20px;padding:8px 15px;background:transparent;color:var(--muted);font-size:12px}.productSort button.active{background:var(--ink);color:#fffdf7}
+
+#listRows .row,.homeListRow{min-height:48px;padding:5px 0;gap:8px}#listRows .row strong,.homeListRow strong{font-size:14px}#listSearch{width:100%;margin:6px 0}.homeListRow output{min-width:24px;text-align:center}.homeListRow button.quiet{min-width:34px}#toast button{color:#fff;text-decoration:underline}.sourceTabs{flex-wrap:wrap}
