@@ -1,6 +1,6 @@
-import {listSyncStatus} from './sync-status.mjs?v=20261114-status1';
-import {connectSharon,snapshot,installSnapshot} from './sharon.mjs?v=20261114-status1';
-import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-status1';
+import {listSyncStatus} from './sync-status.mjs?v=20261114-shopl2';
+import {connectSharon,snapshot,installSnapshot} from './sharon.mjs?v=20261114-shopl2';
+import {norm,uid,importOverview,addItem,validate,mergeCatalog,productQuantity,decreaseProduct,removeCategoryCycles,createBeepGate,barcodeFormat,findBeepProfile,saveBeepProfile,markScannedLine,addPickedExtra,importShoppingList,importListFile,fuzzyMatch,mergeProductVariants,similarProductPairs} from './core.mjs?v=20261114-shopl2';
 const $=s=>document.querySelector(s), el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 let cloudBusy=false;
 let homeSection='mylist',productCategory='',homeFilter='needed';const KEY='bs.app.v1';let state={schemaVersion:1,categories:[],products:[],recipes:[],lists:[{id:uid(),name:'Deze week',items:[]}]},activeList,view='home',path=[],saveBlocked=false,stopCamera=()=>{};
@@ -510,16 +510,19 @@ async function openSharonLists(){
  }catch(e){toast('Verbinding nog niet beschikbaar: '+e.message);}
 }
 $('#sharonLists').onclick=openSharonLists;
-setInterval(syncCloud,15000);
-window.addEventListener('online',syncCloud);
+
+window.addEventListener('online',updateCloudStatus);
 if(new URLSearchParams(location.search).has('shoplist'))openSharonLists();
 
 function updateCloudStatus(){
+ const logo=$('#manageLogo');if(logo){logo.classList.toggle('is-syncing',cloudBusy);logo.classList.toggle('needs-sync',!!list()?.cloud?.pending);logo.setAttribute('aria-busy',String(cloudBusy));logo.title=cloudBusy?'Synchroniseren…':'Beheer openen en synchroniseren';}
  const button=$('#listSyncStatus');if(!button)return;
  const status=listSyncStatus(list(),{online:navigator.onLine,busy:cloudBusy});button.textContent=status.label;button.dataset.state=status.state;button.title=status.detail;button.setAttribute('aria-label',status.label+'. '+status.detail);
 }
 $('#listSyncStatus').onclick=()=>{if(!list()?.cloud||list().cloud.conflict)openSharonLists();else syncCloud();};
 window.addEventListener('offline',updateCloudStatus);
-document.addEventListener('visibilitychange',()=>{updateCloudStatus();if(!document.hidden)syncCloud();});
+document.addEventListener('visibilitychange',updateCloudStatus);
 setInterval(updateCloudStatus,10000);
 updateCloudStatus();syncCloud();
+
+$('#manageLogo').onclick=()=>{switchView('manage');syncCloud();};

@@ -4,7 +4,7 @@ Zelfstandige Nederlandse webapp zonder dependencies of build. Producten en gerec
 
 ## Publiceren op GitHub Pages
 
-Settings → Pages → Source: GitHub Actions. De verwachte URL na publicatie is https://stefan-van-dijk.github.io/BS/.
+Settings → Pages → Source: GitHub Actions. De verwachte URL na publicatie is https://stefan-van-dijk.github.io/Shopl/.
 
 ## Starten en gegevens
 
